@@ -294,6 +294,40 @@
       margin: 10px 0 12px;
     }
 
+
+    .quote-approve {
+      margin: 1.25rem 0 1.5rem;
+      padding: 1rem 1.1rem 1.15rem;
+      border: 1px solid #1e4d8c;
+      border-radius: 10px;
+      background: #f0f6fc;
+    }
+    .quote-approve h3 { margin-top: 0; color: #1e4d8c; }
+    .quote-approve .q-none {
+      padding: 12px 14px;
+      background: #fef3c7;
+      border: 1px solid #d97706;
+      border-radius: 8px;
+      font-weight: 600;
+      color: #92400e;
+    }
+    .quote-approve .q-lines {
+      white-space: pre-line;
+      font-size: 13px;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 0.5rem 0 0.75rem;
+    }
+    .quote-approve .q-approve-check {
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-start;
+      margin: 0.75rem 0;
+      font-weight: 600;
+    }
+    .quote-approve .q-approve-check input { margin-top: 3px; }
     .sig-status {
       font-size: 12px;
       color: var(--ok);
@@ -660,6 +694,13 @@
       <span class="llc-name llc-sync">COTHE LLC</span> may retain anonymized methodology notes that do not identify Client.
     </p>
 
+
+    <div class="quote-approve" id="quoteApproveSection">
+      <h3>Quote approval</h3>
+      <p class="muted" style="margin-top:0">Review the estimate prepared for this engagement. Approving and signing below attaches the quote to your authorization submission.</p>
+      <div id="quoteApproveBody"></div>
+    </div>
+
     <h3>12. Acknowledgment, E-Signature &amp; Identity Photo</h3>
     <p>
       By signing below, Client acknowledges that it has read this Agreement, understands that authorization runs to
@@ -787,138 +828,128 @@
       llcInput.addEventListener("change", syncLlc);
       syncLlc();
 
-      /* ---- Signature pad ---- */
-      var canvas = document.getElementById("sigCanvas");
-      var wrap = document.getElementById("sigPadWrap");
-      var ctx = canvas.getContext("2d");
-      var drawing = false;
-      var hasInk = false;
-      var lastX = 0;
-      var lastY = 0;
-      var sigStatus = document.getElementById("sigStatus");
-      var typedNameInput = document.getElementById("clientSigName");
 
-      function resizeCanvas() {
-        var ratio = window.devicePixelRatio || 1;
-        var rect = canvas.getBoundingClientRect();
-        var w = Math.max(1, Math.floor(rect.width));
-        var h = Math.max(1, Math.floor(rect.height));
-        var snapshot = hasInk ? canvas.toDataURL("image/png") : null;
-        canvas.width = Math.floor(w * ratio);
-        canvas.height = Math.floor(h * ratio);
-        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        ctx.strokeStyle = "#1a1f2e";
-        ctx.lineWidth = 2.25;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, w, h);
-        if (snapshot) {
-          var img = new Image();
-          img.onload = function () {
-            ctx.drawImage(img, 0, 0, w, h);
-          };
-          img.src = snapshot;
+      /* ---- Reusable e-sign pad (auth + quote approval) ---- */
+      function createSigPad(opts) {
+        var canvas = document.getElementById(opts.canvasId);
+        var wrap = document.getElementById(opts.wrapId);
+        var statusEl = document.getElementById(opts.statusId);
+        var typedNameInput = opts.typedNameId ? document.getElementById(opts.typedNameId) : null;
+        var ctx = canvas.getContext("2d");
+        var drawing = false, hasInk = false, lastX = 0, lastY = 0;
+
+        function resize() {
+          var ratio = window.devicePixelRatio || 1;
+          var rect = canvas.getBoundingClientRect();
+          var w = Math.max(1, Math.floor(rect.width));
+          var h = Math.max(1, Math.floor(rect.height));
+          var snapshot = hasInk ? canvas.toDataURL("image/png") : null;
+          canvas.width = Math.floor(w * ratio);
+          canvas.height = Math.floor(h * ratio);
+          ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.strokeStyle = "#1a1f2e";
+          ctx.lineWidth = 2.25;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, w, h);
+          if (snapshot) {
+            var img = new Image();
+            img.onload = function () { ctx.drawImage(img, 0, 0, w, h); };
+            img.src = snapshot;
+          }
         }
-      }
-
-      function setHasInk(v) {
-        hasInk = v;
-        wrap.classList.toggle("has-ink", v);
-        sigStatus.textContent = v ? "Signature captured (PNG)." : "";
-      }
-
-      function posFromEvent(e) {
-        var rect = canvas.getBoundingClientRect();
-        var t = e.touches && e.touches[0] ? e.touches[0] : e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : e;
-        return { x: t.clientX - rect.left, y: t.clientY - rect.top };
-      }
-
-      function startDraw(e) {
-        e.preventDefault();
-        drawing = true;
-        var p = posFromEvent(e);
-        lastX = p.x;
-        lastY = p.y;
-      }
-
-      function moveDraw(e) {
-        if (!drawing) return;
-        e.preventDefault();
-        var p = posFromEvent(e);
-        ctx.beginPath();
-        ctx.moveTo(lastX, lastY);
-        ctx.lineTo(p.x, p.y);
-        ctx.stroke();
-        lastX = p.x;
-        lastY = p.y;
-        setHasInk(true);
-      }
-
-      function endDraw(e) {
-        if (!drawing) return;
-        e.preventDefault();
-        drawing = false;
-      }
-
-      canvas.addEventListener("mousedown", startDraw);
-      canvas.addEventListener("mousemove", moveDraw);
-      window.addEventListener("mouseup", endDraw);
-      canvas.addEventListener("mouseleave", endDraw);
-
-      canvas.addEventListener("touchstart", startDraw, { passive: false });
-      canvas.addEventListener("touchmove", moveDraw, { passive: false });
-      canvas.addEventListener("touchend", endDraw, { passive: false });
-      canvas.addEventListener("touchcancel", endDraw, { passive: false });
-
-      function clearSig() {
-        var rect = canvas.getBoundingClientRect();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        var ratio = window.devicePixelRatio || 1;
-        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, rect.width, rect.height);
-        setHasInk(false);
-        sigStatus.textContent = "Signature cleared.";
-      }
-
-      function useTypedName() {
-        var name = (typedNameInput.value || "").trim();
-        if (!name) {
-          sigStatus.textContent = "Enter a typed legal name first.";
-          typedNameInput.focus();
-          return;
+        function setHasInk(v) {
+          hasInk = v;
+          wrap.classList.toggle("has-ink", v);
+          if (statusEl) statusEl.textContent = v ? "Signature captured (PNG)." : "";
         }
-        clearSig();
-        var rect = canvas.getBoundingClientRect();
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, rect.width, rect.height);
-        ctx.fillStyle = "#1a1f2e";
-        ctx.font = 'italic 28px "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive';
-        ctx.textBaseline = "middle";
-        var maxW = rect.width - 40;
-        var size = 28;
-        while (size > 16 && ctx.measureText(name).width > maxW) {
-          size -= 1;
-          ctx.font = "italic " + size + 'px "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive';
+        function posFromEvent(e) {
+          var rect = canvas.getBoundingClientRect();
+          var t = e.touches && e.touches[0] ? e.touches[0] : e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : e;
+          return { x: t.clientX - rect.left, y: t.clientY - rect.top };
         }
-        ctx.fillText(name, 20, rect.height / 2);
-        setHasInk(true);
-        sigStatus.textContent = "Typed-name signature applied (PNG).";
+        function startDraw(e) {
+          e.preventDefault();
+          drawing = true;
+          var p = posFromEvent(e);
+          lastX = p.x; lastY = p.y;
+        }
+        function moveDraw(e) {
+          if (!drawing) return;
+          e.preventDefault();
+          var p = posFromEvent(e);
+          ctx.beginPath();
+          ctx.moveTo(lastX, lastY);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+          lastX = p.x; lastY = p.y;
+          setHasInk(true);
+        }
+        function endDraw(e) {
+          if (!drawing) return;
+          e.preventDefault();
+          drawing = false;
+        }
+        canvas.addEventListener("mousedown", startDraw);
+        canvas.addEventListener("mousemove", moveDraw);
+        window.addEventListener("mouseup", endDraw);
+        canvas.addEventListener("mouseleave", endDraw);
+        canvas.addEventListener("touchstart", startDraw, { passive: false });
+        canvas.addEventListener("touchmove", moveDraw, { passive: false });
+        canvas.addEventListener("touchend", endDraw, { passive: false });
+        canvas.addEventListener("touchcancel", endDraw, { passive: false });
+
+        function clear() {
+          var rect = canvas.getBoundingClientRect();
+          var ratio = window.devicePixelRatio || 1;
+          ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, rect.width, rect.height);
+          setHasInk(false);
+          if (statusEl) statusEl.textContent = "Signature cleared.";
+        }
+        function useTypedName() {
+          var name = typedNameInput ? (typedNameInput.value || "").trim() : "";
+          if (!name) {
+            if (statusEl) statusEl.textContent = "Enter a typed name first.";
+            if (typedNameInput) typedNameInput.focus();
+            return;
+          }
+          clear();
+          var rect = canvas.getBoundingClientRect();
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, rect.width, rect.height);
+          ctx.fillStyle = "#1a1f2e";
+          ctx.font = 'italic 28px "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive';
+          ctx.textBaseline = "middle";
+          var maxW = rect.width - 40, size = 28;
+          while (size > 16 && ctx.measureText(name).width > maxW) {
+            size -= 1;
+            ctx.font = "italic " + size + 'px "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive';
+          }
+          ctx.fillText(name, 20, rect.height / 2);
+          setHasInk(true);
+          if (statusEl) statusEl.textContent = "Typed-name signature applied (PNG).";
+        }
+        if (opts.clearBtnId) document.getElementById(opts.clearBtnId).addEventListener("click", clear);
+        if (opts.typedBtnId) document.getElementById(opts.typedBtnId).addEventListener("click", useTypedName);
+        window.addEventListener("resize", resize);
+        resize();
+        return {
+          resize: resize,
+          clear: clear,
+          getDataUrl: function () { return hasInk ? canvas.toDataURL("image/png") : null; },
+          hasInk: function () { return hasInk; }
+        };
       }
 
-      document.getElementById("btnClearSig").addEventListener("click", clearSig);
-      document.getElementById("btnTypedSig").addEventListener("click", useTypedName);
-
-      window.addEventListener("resize", function () {
-        resizeCanvas();
+      var authSigPad = createSigPad({
+        canvasId: "sigCanvas", wrapId: "sigPadWrap", statusId: "sigStatus",
+        typedNameId: "clientSigName", clearBtnId: "btnClearSig", typedBtnId: "btnTypedSig"
       });
-      resizeCanvas();
-
-      function getSignaturePngDataUrl() {
-        if (!hasInk) return null;
-        return canvas.toDataURL("image/png");
-      }
+      var quoteSigPad = null;
+      function getSignaturePngDataUrl() { return authSigPad.getDataUrl(); }
 
       /* ---- Authorizer photo (camera + file) ---- */
       var photoInput = document.getElementById("authorizerPhoto");
@@ -1044,30 +1075,133 @@
         return el ? (el.value || "").trim() : "";
       }
 
+
       function storedQuote() {
         try { var q = JSON.parse(localStorage.getItem("cothe_quote") || "null"); return q && q.createdAt ? q : null; } catch (e) { return null; }
       }
+      function moneyFmt(n) { return "$" + (Number(n) || 0).toFixed(2); }
       function quoteText(q) {
-        if (!q) return "No quote attached";
-        var m = function (n) { return "$" + Number(n).toFixed(2); };
+        if (!q || q === "none") return "No quote attached";
         return (q.salesRep ? "Prepared by: " + q.salesRep + "\n" : "") + (q.lines && q.lines.length ? q.lines.join("\n") : "(no one-time services)") +
-          "\nSubtotal " + m(q.subtotal) + (q.discount ? " | Discount -" + m(q.discountAmt) : "") +
-          "\nTaxable " + m(q.taxable) + " | Tax " + m(q.tax) + " (" + q.taxRate + "%, " + q.state + ", " + q.use + ")" +
-          "\nOne-time total " + m(q.oneTimeTotal) +
-          (q.monthly ? "\n" + q.monitoring + ": " + m(q.monthlyTotal) + "/mo incl. tax" : "");
+          "\nSubtotal " + moneyFmt(q.subtotal) + (q.discount ? " | Discount -" + moneyFmt(q.discountAmt) : "") +
+          "\nTaxable " + moneyFmt(q.taxable) + " | Tax " + moneyFmt(q.tax) + " (" + q.taxRate + "%, " + q.state + ", " + q.use + ")" +
+          "\nOne-time total " + moneyFmt(q.oneTimeTotal) +
+          (q.monthly ? "\n" + q.monitoring + ": " + moneyFmt(q.monthlyTotal) + "/mo incl. tax" : "");
       }
-      (function showQuote() {
-        var q = storedQuote(); if (!q) return;
-        var box = document.createElement("div");
-        box.id = "quoteAttached";
-        box.style.cssText = "max-width:900px;margin:12px auto;padding:10px 14px;background:#e8f0fa;border:1px solid #1e4d8c;border-radius:8px;font-size:13px;white-space:pre-line";
-        box.textContent = "Quote attached to this submission (estimate only):\n" + quoteText(q);
-        var rm = document.createElement("button"); rm.type = "button"; rm.textContent = "Remove quote"; rm.style.marginTop = "6px";
-        rm.onclick = function () { try { localStorage.removeItem("cothe_quote"); } catch (e) {} box.remove(); };
-        box.appendChild(document.createElement("br")); box.appendChild(rm);
-        var tb = document.querySelector(".toolbar");
-        if (tb && tb.parentNode) tb.parentNode.insertBefore(box, tb.nextSibling); else document.body.insertBefore(box, document.body.firstChild);
-      })();
+      function moneyCanon(n) {
+        var x = Number(n);
+        if (!isFinite(x)) x = 0;
+        return (Math.round(x * 100 + (x >= 0 ? 1e-8 : -1e-8)) / 100).toFixed(2);
+      }
+      function rateCanon(n) {
+        var x = Number(n);
+        if (!isFinite(x)) x = 0;
+        return (Math.round(x * 10000 + (x >= 0 ? 1e-8 : -1e-8)) / 10000).toFixed(4);
+      }
+      function quoteCanonical(q) {
+        var obj = {
+          tier: String(q.tier || ""),
+          lines: (q.lines || []).map(function (x) { return String(x); }),
+          subtotal: moneyCanon(q.subtotal),
+          discountAmt: moneyCanon(q.discountAmt),
+          taxable: moneyCanon(q.taxable),
+          taxRate: rateCanon(q.taxRate),
+          tax: moneyCanon(q.tax),
+          oneTimeTotal: moneyCanon(q.oneTimeTotal),
+          monitoring: String(q.monitoring || ""),
+          monthly: moneyCanon(q.monthly),
+          monthlyTax: moneyCanon(q.monthlyTax),
+          monthlyTotal: moneyCanon(q.monthlyTotal),
+          salesRep: String(q.salesRep || "")
+        };
+        return JSON.stringify(obj);
+      }
+      function sha256HexSync(str) {
+        /* compact SHA-256 (sync) for quote_hash; matches Python hashlib.sha256(...).hexdigest() */
+        function rotr(n, x) { return (x >>> n) | (x << (32 - n)); }
+        var K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+        var bytes = [];
+        for (var i = 0; i < str.length; i++) {
+          var c = str.charCodeAt(i);
+          if (c < 0x80) bytes.push(c);
+          else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+          else if (c < 0xd800 || c >= 0xe000) bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+          else { i++; var c2 = 0x10000 + (((c & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff)); bytes.push(0xf0 | (c2 >> 18), 0x80 | ((c2 >> 12) & 63), 0x80 | ((c2 >> 6) & 63), 0x80 | (c2 & 63)); }
+        }
+        var l = bytes.length, bitLen = l * 8;
+        bytes.push(0x80);
+        while ((bytes.length % 64) !== 56) bytes.push(0);
+        for (var sft = 56; sft >= 0; sft -= 8) bytes.push((Math.floor(bitLen / Math.pow(2, sft)) ) & 0xff);
+        var H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+        for (var off = 0; off < bytes.length; off += 64) {
+          var w = new Array(64);
+          for (i = 0; i < 16; i++) w[i] = (bytes[off + i * 4] << 24) | (bytes[off + i * 4 + 1] << 16) | (bytes[off + i * 4 + 2] << 8) | bytes[off + i * 4 + 3];
+          for (i = 16; i < 64; i++) {
+            var s0 = rotr(7, w[i - 15]) ^ rotr(18, w[i - 15]) ^ (w[i - 15] >>> 3);
+            var s1 = rotr(17, w[i - 2]) ^ rotr(19, w[i - 2]) ^ (w[i - 2] >>> 10);
+            w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+          }
+          var a = H[0], b = H[1], c0 = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+          for (i = 0; i < 64; i++) {
+            var S1 = rotr(6, e) ^ rotr(11, e) ^ rotr(25, e);
+            var ch = (e & f) ^ (~e & g);
+            var t1 = (h + S1 + ch + K[i] + w[i]) | 0;
+            var S0 = rotr(2, a) ^ rotr(13, a) ^ rotr(22, a);
+            var maj = (a & b) ^ (a & c0) ^ (b & c0);
+            var t2 = (S0 + maj) | 0;
+            h = g; g = f; f = e; e = (d + t1) | 0; d = c0; c0 = b; b = a; a = (t1 + t2) | 0;
+          }
+          H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c0) | 0; H[3] = (H[3] + d) | 0;
+          H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+        }
+        return H.map(function (x) { return ("00000000" + (x >>> 0).toString(16)).slice(-8); }).join("");
+      }
+      function quoteHash(q) { return sha256HexSync(quoteCanonical(q)); }
+
+      function renderQuoteApproval() {
+        var body = document.getElementById("quoteApproveBody");
+        if (!body) return;
+        var q = storedQuote();
+        if (!q) {
+          body.innerHTML = '<p class="q-none">No quote attached — a COTHE rep must prepare one</p>';
+          quoteSigPad = null;
+          return;
+        }
+        body.innerHTML =
+          '<p class="sig-meta" style="margin:0 0 4px">Estimate (line items &amp; totals)</p>' +
+          '<div class="q-lines" id="quoteLinesBox"></div>' +
+          '<label class="q-approve-check"><input type="checkbox" id="quoteApproveChk" />' +
+          '<span>I approve this quote and pricing</span></label>' +
+          '<div class="grid-2">' +
+          '<div class="field"><label for="quoteApproveName">Typed client name (approver)</label>' +
+          '<input id="quoteApproveName" type="text" autocomplete="name" placeholder="Full legal name" /></div>' +
+          '<div class="field"><label for="quoteApproveDate">Date</label>' +
+          '<input id="quoteApproveDate" type="date" /></div></div>' +
+          '<p class="sig-meta">Draw signature for quote approval (mouse or finger)</p>' +
+          '<div class="sig-pad-wrap" id="quoteSigPadWrap">' +
+          '<canvas id="quoteSigCanvas" width="640" height="200" aria-label="Quote approval signature pad"></canvas>' +
+          '<div class="sig-pad-hint">Sign here</div></div>' +
+          '<div class="sig-actions">' +
+          '<button type="button" class="btn ghost" id="btnClearQuoteSig">Clear</button>' +
+          '<button type="button" class="btn ghost" id="btnTypedQuoteSig">Use typed name</button></div>' +
+          '<p class="sig-status" id="quoteSigStatus" aria-live="polite"></p>' +
+          '<p class="muted" style="font-size:12px;margin:6px 0 0">You can remove the attached quote and start over from the sales quote builder.</p>' +
+          '<button type="button" class="btn ghost" id="btnRemoveQuote" style="margin-top:6px">Remove quote</button>';
+        document.getElementById("quoteLinesBox").textContent = quoteText(q);
+        var qd = document.getElementById("quoteApproveDate");
+        if (qd && !qd.value) qd.value = new Date().toISOString().slice(0, 10);
+        quoteSigPad = createSigPad({
+          canvasId: "quoteSigCanvas", wrapId: "quoteSigPadWrap", statusId: "quoteSigStatus",
+          typedNameId: "quoteApproveName", clearBtnId: "btnClearQuoteSig", typedBtnId: "btnTypedQuoteSig"
+        });
+        document.getElementById("btnRemoveQuote").onclick = function () {
+          try { localStorage.removeItem("cothe_quote"); } catch (e) {}
+          quoteSigPad = null;
+          renderQuoteApproval();
+        };
+      }
+      renderQuoteApproval();
+      window.COTHE_renderQuoteApproval = renderQuoteApproval;
 
       function collectAnswers() {
         var sig = getSignaturePngDataUrl();
@@ -1112,7 +1246,23 @@
             identityPhotoSource: photoDataUrl ? "direct" : (phoneSent() ? "phone" : "none"),
             identityPhotoLabel: "Photo of the authorizing person for identity on the authorization"
           },
-          quote: storedQuote(),
+          quote: (function () {
+            var q = storedQuote();
+            return q || "none";
+          })(),
+          quote_approved: (function () {
+            var q = storedQuote();
+            var chk = document.getElementById("quoteApproveChk");
+            return !!(q && chk && chk.checked && quoteSigPad && quoteSigPad.hasInk() && val("quoteApproveName"));
+          })(),
+          quote_approved_by: val("quoteApproveName"),
+          quote_approved_date: val("quoteApproveDate"),
+          quote_signature_captured: !!(quoteSigPad && quoteSigPad.hasInk()),
+          quote_hash: (function () {
+            var q = storedQuote();
+            return q ? quoteHash(q) : "";
+          })(),
+          quote_signaturePngDataUrl: quoteSigPad ? quoteSigPad.getDataUrl() : null,
           serviceProviderRep: {
             printedName: val("providerSigName"),
             title: val("providerSigTitle"),
@@ -1121,6 +1271,7 @@
           }
         };
       }
+      window.COTHE_collectAnswers = collectAnswers;
 
       function downloadAnswers() {
         var data = collectAnswers();
@@ -1135,7 +1286,8 @@
           URL.revokeObjectURL(a.href);
           a.remove();
         }, 0);
-        sigStatus.textContent = data.authorizingPerson.signaturePresent
+        var sigStatus = document.getElementById("sigStatus");
+        if (sigStatus) sigStatus.textContent = data.authorizingPerson.signaturePresent
           ? "Downloaded — signature PNG included."
           : "Downloaded — no signature drawn yet.";
         if (data.authorizingPerson.identityPhotoPresent) {
@@ -1199,8 +1351,11 @@
             { name: "Out of scope (optional)", value: clip(e.outOfScope, 1000) },
             { name: "Allowed tests / objectives", value: clip(tests + (e.objectives ? "\n" + e.objectives : ""), 1000) },
             { name: "Special instructions", value: clip(e.specialInstructions, 1000) },
-            { name: "Sales rep", value: clip(d.quote && d.quote.salesRep ? d.quote.salesRep : "— (no quote / self-serve)", 200), inline: true },
+            { name: "Sales rep", value: clip(d.quote && d.quote !== "none" && d.quote.salesRep ? d.quote.salesRep : "— (no quote / self-serve)", 200), inline: true },
             { name: "Quote (estimate)", value: clip(quoteText(d.quote), 1000) },
+            { name: "🧾 Quote approved", value: d.quote_approved
+                ? ("🧾 Quote approved: ✅ by " + clip(d.quote_approved_by || "?", 120) + " on " + clip(d.quote_approved_date || "?", 40))
+                : "❌ Not approved", inline: true },
             { name: "Signed by", value: clip(a.typedLegalName + (a.title ? ", " + a.title : "") + " — " + (a.date || "no date"), 1000) },
             { name: "Attachments", value: "E-signature: " + (a.signaturePresent ? "✅ captured" : "❌ none") + "\nID photo: " + (a.identityPhotoPresent ? "✅ captured" : (a.photo_code ? "📱 Photo: sent from phone, code " + a.photo_code : "❌ none")) },
             { name: "📷 Photo code", value: a.photo_code ? "`" + a.photo_code + "`" : "—", inline: true },
@@ -1210,22 +1365,25 @@
         };
         var embeds = [embed], fd = new FormData(), n = 0;
         if (a.signaturePngDataUrl) { fd.append("files[" + n + "]", dataUrlToBlob(a.signaturePngDataUrl), "signature.png"); n++; embed.image = { url: "attachment://signature.png" }; }
+        if (d.quote_signaturePngDataUrl) { fd.append("files[" + n + "]", dataUrlToBlob(d.quote_signaturePngDataUrl), "quote-signature.png"); n++; }
         if (a.identityPhotoJpegDataUrl) {
           var pb = dataUrlToBlob(a.identityPhotoJpegDataUrl);
           if (pb.size < 8 * 1024 * 1024) { fd.append("files[" + n + "]", pb, "id-photo.jpg"); n++; embeds.push({ title: "ID photo", color: 0x2563eb, image: { url: "attachment://id-photo.jpg" } }); }
         }
         var slim = JSON.parse(JSON.stringify(d));
         delete slim.authorizingPerson.signaturePngDataUrl; delete slim.authorizingPerson.identityPhotoJpegDataUrl;
+        delete slim.quote_signaturePngDataUrl;
         fd.append("files[" + n + "]", new Blob([JSON.stringify(slim, null, 2)], { type: "application/json" }), "answers.json");
         fd.append("payload_json", JSON.stringify({ username: "COTHE Intake", embeds: embeds, allowed_mentions: { parse: [] } }));
         submitting = true;
-        sigStatus.textContent = "Submitting…";
+        var sigStatus = document.getElementById("sigStatus");
+        if (sigStatus) sigStatus.textContent = "Submitting…";
         fetch(hook, { method: "POST", body: fd }).then(function (r) {
           if (!r.ok) throw new Error("HTTP " + r.status);
-          sigStatus.innerHTML = "Submitted to COTHE. Thank you — we'll be in touch. <a href=\"../setup/\"><strong>Next: what to install &rarr;</strong></a>";
+          if (sigStatus) sigStatus.innerHTML = "Submitted to COTHE. Thank you — we'll be in touch. <a href=\"../setup/\"><strong>Next: what to install &rarr;</strong></a>";
           alert("Submitted to COTHE. Thank you!");
         }).catch(function (err) {
-          sigStatus.textContent = "Submit failed (" + err.message + "). Please use Download answers and email the file.";
+          if (sigStatus) sigStatus.textContent = "Submit failed (" + err.message + "). Please use Download answers and email the file.";
           alert("Submit failed. Please use Download answers and email the file to COTHE.");
         }).then(function () { submitting = false; });
       }

@@ -91,7 +91,10 @@ def download_answers(msg, dest_dir):
         if (a.get("filename") or "").lower() == "answers.json":
             url = a["url"]
             path = os.path.join(dest_dir, "answers-%s.json" % msg["id"])
-            urllib.request.urlretrieve(url, path)
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "cothe-run-test-watcher (https://holydog413.github.io/cothe-llc, 1.0)"})
+            with urllib.request.urlopen(req, timeout=30) as r, open(path, "wb") as f:
+                f.write(r.read())
             return path
     return None
 
@@ -149,8 +152,14 @@ def process():
             ok, missing = core.validate_authorization(info)
             if not ok:
                 reason = "; ".join(missing)
-                msg_out = ("⛔ **Won't run** (requested by %s) — authorization `%s` incomplete: "
-                           "%s. No scan performed." % (operator, auth["id"], reason))
+                qr = core.validate_quote(info)
+                if qr:
+                    msg_out = ("⛔ **Won't run — quote not approved/signed** (requested by %s) — "
+                               "authorization `%s`: %s. No scan performed."
+                               % (operator, auth["id"], reason))
+                else:
+                    msg_out = ("⛔ **Won't run** (requested by %s) — authorization `%s` incomplete: "
+                               "%s. No scan performed." % (operator, auth["id"], reason))
                 print(msg_out, file=sys.stderr)
                 if not DRY:
                     core.post_webhook(content=msg_out)

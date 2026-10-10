@@ -15,7 +15,9 @@ Safety (enforced here):
   * When run from an authorization (--answers answers.json) it REQUIRES:
       signed-by name, e-signature captured, ID photo captured (or a photo_code matching a
       '📷 ID photo for request code' image message in the intake channel; needs
-      COTHE_DISCORD_BOT_TOKEN), and a valid client IP.
+      COTHE_DISCORD_BOT_TOKEN), a valid client IP, and an APPROVED + SIGNED quote
+      (base service, quote_approved, quote_approved_by, quote_signature_captured,
+      quote_hash == SHA-256 of canonical line items + totals).
     If any are missing it posts WHY it won't run and exits non-zero.
   * One run per authorization message id: tracked in a seen file. A second attempt
     on the same auth id is refused.
@@ -304,6 +306,66 @@ def resolve_photo(info, messages=None):
     return info
 
 
+def _money(v):
+    from decimal import Decimal, ROUND_HALF_UP
+    try:
+        return str(Decimal(float(v or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    except Exception:
+        return "0.00"
+
+
+def quote_canonical(q):
+    """Canonical JSON of quote line items + totals (must match authorize/index.html quoteCanonical)."""
+    from decimal import Decimal, ROUND_HALF_UP
+    try:
+        rate = str(Decimal(float(q.get("taxRate") or 0)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+    except Exception:
+        rate = "0.0000"
+    obj = {
+        "tier": str(q.get("tier") or ""),
+        "lines": [str(x) for x in (q.get("lines") or [])],
+        "subtotal": _money(q.get("subtotal")),
+        "discountAmt": _money(q.get("discountAmt")),
+        "taxable": _money(q.get("taxable")),
+        "taxRate": rate,
+        "tax": _money(q.get("tax")),
+        "oneTimeTotal": _money(q.get("oneTimeTotal")),
+        "monitoring": str(q.get("monitoring") or ""),
+        "monthly": _money(q.get("monthly")),
+        "monthlyTax": _money(q.get("monthlyTax")),
+        "monthlyTotal": _money(q.get("monthlyTotal")),
+        "salesRep": str(q.get("salesRep") or ""),
+    }
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def quote_hash(q):
+    import hashlib
+    return hashlib.sha256(quote_canonical(q).encode("utf-8")).hexdigest()
+
+
+def validate_quote(info):
+    """Returns list of reasons the quote gate fails (empty = OK)."""
+    r = []
+    q = info.get("quote")
+    if not isinstance(q, dict):
+        return ["no quote attached"]
+    if not str(q.get("tier") or "").strip() or str(q.get("tier")).strip().lower() == "none":
+        r.append("quote has no base service")
+    if info.get("quote_approved") is not True:
+        r.append("quote not approved by client")
+    if not str(info.get("quote_approved_by") or "").strip():
+        r.append("quote approver name missing")
+    if info.get("quote_signature_captured") is not True:
+        r.append("quote signature not captured")
+    h = str(info.get("quote_hash") or "").strip().lower()
+    if not h:
+        r.append("quote_hash missing")
+    elif h != quote_hash(q):
+        r.append("quote_hash mismatch (quote items/totals were altered)")
+    return r
+
+
 def extract_from_answers(path):
     d = json.load(open(path))
     a = d.get("authorizingPerson", {})
@@ -316,6 +378,12 @@ def extract_from_answers(path):
         "sig": bool(a.get("signaturePresent")),
         "photo": bool(a.get("identityPhotoPresent")),
         "photo_code": (a.get("photo_code") or "").strip().upper(),
+        "quote": d.get("quote") if isinstance(d.get("quote"), dict) else None,
+        "quote_approved": d.get("quote_approved"),
+        "quote_approved_by": d.get("quote_approved_by") or "",
+        "quote_approved_date": d.get("quote_approved_date") or "",
+        "quote_signature_captured": d.get("quote_signature_captured"),
+        "quote_hash": d.get("quote_hash") or "",
     }
 
 
@@ -330,6 +398,9 @@ def validate_authorization(info):
         missing.append(info.get("photo_missing_reason") or "ID photo was not captured")
     if not is_public_ip(info.get("ip", "")):
         missing.append("a valid public client IP is missing/invalid")
+    qr = validate_quote(info)
+    if qr:
+        missing.append("quote not approved/signed (" + ", ".join(qr) + ")")
     return (len(missing) == 0, missing)
 
 
@@ -369,8 +440,13 @@ def main():
     ip = info["ip"]
     if not ok:
         reason = "; ".join(missing)
-        msg = ("⛔ **Won't run** for IP `%s` — authorization incomplete: %s. "
-               "No scan was performed." % (ip or "?", reason))
+        qr = validate_quote(info) if args.answers else []
+        if qr:
+            msg = ("⛔ **Won't run — quote not approved/signed** for IP `%s`: %s. "
+                   "No scan was performed." % (ip or "?", reason))
+        else:
+            msg = ("⛔ **Won't run** for IP `%s` — authorization incomplete: %s. "
+                   "No scan was performed." % (ip or "?", reason))
         print(msg, file=sys.stderr)
         if not args.dry_run:
             post_webhook(content=msg)
