@@ -99,6 +99,32 @@ def download_answers(msg, dest_dir):
     return None
 
 
+REQ_STATE = os.path.join(core.DATA, "requesters_last_intake.txt")
+
+
+def refresh_requesters(msgs):
+    """Rebuild quote/requesters.enc.json when a new intake post appears. Fails quietly."""
+    ids = [int(m["id"]) for m in msgs if is_intake_auth(m)]
+    if not ids or DRY:
+        return
+    newest = str(max(ids))
+    try:
+        last = open(REQ_STATE).read().strip()
+    except Exception:
+        last = ""
+    if newest == last:
+        return
+    import subprocess
+    r = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "build_requesters.py")], timeout=600,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if r.returncode == 0:
+        os.makedirs(core.DATA, exist_ok=True)
+        open(REQ_STATE, "w").write(newest)
+    else:
+        print("[requesters] refresh failed (rc=%d) — continuing" % r.returncode, file=sys.stderr)
+
+
 def process():
     if not TOKEN:
         setup_help()
@@ -195,6 +221,10 @@ def process():
                                 "company": info.get("company"), "report": md}
             core.save_seen(seen)
             handled += 1
+    try:
+        refresh_requesters(msgs)
+    except Exception as ex:  # never block run-test gating
+        print("[requesters] refresh skipped: %s" % type(ex).__name__, file=sys.stderr)
     print("watcher done — %d assessment(s) run" % handled, file=sys.stderr)
     return 0
 

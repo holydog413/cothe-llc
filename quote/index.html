@@ -59,12 +59,24 @@
     return crypto.subtle.importKey("raw",e.encode(pw),"PBKDF2",false,["deriveKey"]).then(function(k){
       return crypto.subtle.deriveKey({name:"PBKDF2",hash:"SHA-256",salt:b64(b.salt),iterations:b.iter},k,{name:"AES-GCM",length:256},true,["decrypt"]);});}
   function decrypt(key,b){ return crypto.subtle.decrypt({name:"AES-GCM",iv:b64(b.iv)},key,b64(b.ct)).then(function(pt){return JSON.parse(new TextDecoder().decode(pt))}); }
+  var PW=null, REM=false, RQK="cothe_req_key";
+  /* Fetch + decrypt the requester list (same scheme/password). Resolves [] if none. */
+  window.COTHE_loadRequesters=function(){
+    return fetch("requesters.enc.json",{cache:"no-store"}).then(function(r){ if(r.status===404) return null; if(!r.ok) throw new Error("load"); return r.json(); })
+    .then(function(b){ if(!b) return [];
+      var keyP;
+      if(PW){ keyP=derive(PW,b).then(function(k){ if(REM){ crypto.subtle.exportKey("raw",k).then(function(raw){ try{sessionStorage.setItem(RQK,JSON.stringify({salt:b.salt,k:btoa(String.fromCharCode.apply(null,new Uint8Array(raw)))}))}catch(e){} }); } return k; }); }
+      else { var sv=null; try{ sv=JSON.parse(sessionStorage.getItem(RQK)||"null"); }catch(e){}
+        if(!sv||sv.salt!==b.salt) return Promise.reject(new Error("relogin"));
+        keyP=crypto.subtle.importKey("raw",b64(sv.k),{name:"AES-GCM"},false,["decrypt"]); }
+      return keyP.then(function(k){ return decrypt(k,b); }).then(function(x){ return Array.isArray(x)?x:[]; }); });
+  };
   function run(p){
     var st=document.createElement("style"); st.textContent=p.css; document.head.appendChild(st);
     var app=document.getElementById("app"); app.innerHTML=p.html;
     var bar=document.createElement("div"); bar.className="container"; bar.style.cssText="display:flex;justify-content:flex-end;padding-top:1rem";
     bar.innerHTML='<button class="btn btn-secondary" id="logout" type="button">Log out</button>'; app.insertBefore(bar,app.firstChild);
-    document.getElementById("logout").onclick=function(){ try{sessionStorage.removeItem(SK);sessionStorage.removeItem(RK)}catch(e){} location.reload(); };
+    document.getElementById("logout").onclick=function(){ try{sessionStorage.removeItem(SK);sessionStorage.removeItem(RK);sessionStorage.removeItem(RQK)}catch(e){} location.reload(); };
     p.js.forEach(function(code){ var s=document.createElement("script"); s.textContent=code; document.body.appendChild(s); });
     document.documentElement.setAttribute("data-unlocked","1");
   }
@@ -74,7 +86,7 @@
     var u=document.getElementById("u").value.trim().replace(/\s+/g," "), pw=document.getElementById("p").value, rem=document.getElementById("remember").checked;
     var fail=function(){ err.textContent="Incorrect password."; btn.disabled=false; btn.textContent="Unlock quote builder"; };
     if(u.length<2){ err.textContent="Enter your name (at least 2 characters)."; btn.disabled=false; btn.textContent="Unlock quote builder"; return; }
-    window.COTHE_SALES_REP=u;
+    window.COTHE_SALES_REP=u; PW=pw; REM=rem;
     getBlob().then(function(b){ return derive(pw,b).then(function(key){ return decrypt(key,b).then(function(p){
       if(rem){ return crypto.subtle.exportKey("raw",key).then(function(raw){ try{sessionStorage.setItem(SK,btoa(String.fromCharCode.apply(null,new Uint8Array(raw))));sessionStorage.setItem(RK,u)}catch(e){} return p; }); }
       return p; }); }); }).then(run).catch(fail);
