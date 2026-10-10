@@ -45,6 +45,12 @@ TOP_PORTS = ("21,22,23,25,53,80,110,111,135,139,143,161,389,443,445,465,587,"
              "993,995,1433,1521,1723,2049,3306,3389,5432,5900,5985,6379,8000,"
              "8008,8080,8443,8888,9000,9200,27017")
 WEBHOOK = os.environ.get("COTHE_INTAKE_WEBHOOK_URL", "").strip()
+if not WEBHOOK:
+    try:
+        import json as _j
+        WEBHOOK = (_j.load(open("/home/box/agent-data/box-secrets.json")).get("COTHE_INTAKE_WEBHOOK_URL") or "").strip()
+    except Exception:
+        WEBHOOK = ""
 
 
 def is_public_ip(v):
