@@ -19,6 +19,8 @@ Safety (enforced here):
       (base service, quote_approved, quote_approved_by, quote_signature_captured,
       quote_hash == SHA-256 of canonical line items + totals).
     If any are missing it posts WHY it won't run and exits non-zero.
+  * Payment gate: a payment (cash via `paid cash` reply, or Stripe when configured)
+    must be recorded for the authorization id (see cothe_payments.py).
   * One run per authorization message id: tracked in a seen file. A second attempt
     on the same auth id is refused.
 
@@ -37,6 +39,9 @@ Usage:
 """
 import argparse, datetime, ipaddress, json, os, re, subprocess, sys, urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cothe_payments as payments
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = os.path.join(ROOT, "data")
@@ -51,7 +56,7 @@ if not WEBHOOK:
     try:
         import json as _j
         import re as _re
-        _cfg = open("/workspace/cothe-llc/authorize/intake-config.js").read()
+        _cfg = open(os.path.join(ROOT, "authorize", "intake-config.js")).read()
         _m = _re.search(r"https://discord(?:app)?\.com/api/webhooks/[\w/-]+", _cfg)
         WEBHOOK = _m.group(0) if _m else ""
     except Exception:
@@ -174,7 +179,10 @@ def parse_ports(xml_path):
     return out
 
 
-def build_report(scan, operator, company, signed_by, auth_id):
+NO_PAYMENT_MSG = ("⛔ Won't run — no payment recorded. Reply `paid cash` (or pay via Stripe) first.")
+
+
+def build_report(scan, operator, company, signed_by, auth_id, payment=None):
     ip = scan["ip"]
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M %Z").strip()
     lines = []
@@ -184,6 +192,8 @@ def build_report(scan, operator, company, signed_by, auth_id):
     lines.append("- **Authorized by:** %s" % (signed_by or "—"))
     lines.append("- **Company:** %s" % (company or "—"))
     lines.append("- **Run started by (accountable):** %s" % operator)
+    if payment:
+        lines.append("- **Paid:** %s" % payments.describe(payment))
     lines.append("- **Authorization id:** `%s`" % (auth_id or "—"))
     lines.append("- **Run at:** %s" % now)
     lines.append("- **Scan type:** Non-destructive external — TCP connect port scan of "
@@ -584,6 +594,14 @@ def main():
             post_webhook(content=msg)
         sys.exit(2)
 
+    # Payment gate.
+    payment = payments.find_payment(args.auth_id)
+    if not payment:
+        print(NO_PAYMENT_MSG, file=sys.stderr)
+        if not args.dry_run:
+            post_webhook(content=NO_PAYMENT_MSG)
+        sys.exit(4)
+
     # Cap: one run per authorization message id.
     seen = load_seen()
     key = args.auth_id or ("ip:" + ip)
@@ -601,13 +619,14 @@ def main():
                  (args.operator, ip,
                   (" for **%s**" % info["company"]) if info.get("company") else "",
                   info.get("signed_by") or "—"))
+    start_msg += " Run started by %s. Paid: %s." % (args.operator, payments.describe(payment))
     print(start_msg, file=sys.stderr)
     if not args.dry_run:
         post_webhook(content=start_msg)
 
     scan = run_scan(ip)
     report = build_report(scan, args.operator, info.get("company"),
-                          info.get("signed_by"), args.auth_id)
+                          info.get("signed_by"), args.auth_id, payment)
     md_path = os.path.join(REPORTS, "report-%s-%s.md" % (ip.replace(":", "_"), scan["stamp"]))
     os.makedirs(REPORTS, exist_ok=True)
     open(md_path, "w").write(report)

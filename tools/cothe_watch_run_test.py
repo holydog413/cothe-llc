@@ -20,6 +20,9 @@ Safety:
     signature + ID photo captured (or photo_code matched to a phone photo msg) and a valid public client IP (enforced by
     cothe_run_test.validate_authorization).
   * One run per authorization message id (seen file in cothe_run_test).
+  * Payment: a reply `paid cash [amount]` to the authorization (same linking rules as
+    `run test`) records a cash payment in data/payments.json (each message once) and
+    posts a confirmation. `run test` is refused until a payment exists.
 
 Run from cron every few minutes, or once:  python3 tools/cothe_watch_run_test.py
 Env: COTHE_CHANNEL_ID (default 1558462561454657566), DRY_RUN=1, REPLY_WINDOW_MIN.
@@ -28,6 +31,7 @@ import json, os, re, sys, tempfile, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cothe_run_test as core
+import cothe_payments as payments
 
 TOKEN = os.environ.get("COTHE_DISCORD_BOT_TOKEN", "").strip()
 CHANNEL = os.environ.get("COTHE_CHANNEL_ID", "1558462561454657566")
@@ -125,6 +129,67 @@ def refresh_requesters(msgs):
         print("[requesters] refresh failed (rc=%d) — continuing" % r.returncode, file=sys.stderr)
 
 
+def find_auth(m, msgs, by_id):
+    """Authorization this reply responds to: message_reference, else newest intake within window."""
+    auth = None
+    ref_id = (m.get("message_reference") or {}).get("message_id")
+    if ref_id:
+        auth = by_id.get(ref_id)
+        if auth is None:
+            try:
+                auth = api_get("/channels/%s/messages/%s" % (CHANNEL, ref_id))
+            except Exception:
+                auth = None
+    if auth is None:
+        cand = [x for x in msgs if is_intake_auth(x) and int(x["id"]) < int(m["id"])]
+        if cand:
+            newest = max(cand, key=lambda x: int(x["id"]))
+            # Discord snowflake -> ms since epoch
+            dt_ms = (int(m["id"]) >> 22) - (int(newest["id"]) >> 22)
+            if dt_ms <= REPLY_WINDOW_MIN * 60 * 1000:
+                auth = newest
+    return auth if (auth is not None and is_intake_auth(auth)) else None
+
+
+def auth_company(auth):
+    """Best-effort company name from the authorization's answers.json (no scan)."""
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            p = download_answers(auth, td)
+            return core.extract_from_answers(p).get("company", "") if p else ""
+    except Exception:
+        return ""
+
+
+def process_payments(msgs, by_id):
+    """Record `paid cash [amount]` replies. Returns number recorded."""
+    n = 0
+    for m in reversed(msgs):
+        is_cash, amount = payments.parse_paid_cash(m.get("content") or "")
+        if not is_cash or m.get("webhook_id") or payments.is_processed(m["id"]):
+            continue
+        author = m.get("author") or {}
+        name, user = display_name(author), author.get("username") or ""
+        auth = find_auth(m, msgs, by_id)
+        if auth is None:
+            print("[skip] paid-cash msg %s by %s has no linked COTHE authorization — ignored"
+                  % (m["id"], name), file=sys.stderr)
+            continue
+        company = auth_company(auth)
+        if DRY:
+            print("[DRY] would record cash%s by %s for auth %s"
+                  % (payments.fmt_amount(amount), name, auth["id"]), file=sys.stderr)
+            continue
+        rec = payments.record_cash(auth["id"], amount, name, user, m["id"], company)
+        if rec is None:
+            continue
+        who = name + (" (@%s)" % user if user and user != name else "")
+        core.post_webhook(content="💵 Payment recorded — cash%s by %s for %s (auth %s)"
+                          % (payments.fmt_amount(amount), who, company or "—", auth["id"]))
+        n += 1
+    return n
+
+
 def process():
     if not TOKEN:
         setup_help()
@@ -134,30 +199,15 @@ def process():
     # oldest first
     by_id = {m["id"]: m for m in msgs}
     handled = 0
+    try:
+        process_payments(msgs, by_id)
+    except Exception as ex:
+        print("[payments] error: %s" % type(ex).__name__, file=sys.stderr)
     for m in reversed(msgs):
         if not RUN_TEST_RE.match(m.get("content") or ""):
             continue
         operator = display_name(m.get("author") or {})
-        # Find the authorization this run-test responds to.
-        auth = None
-        ref = m.get("message_reference") or {}
-        ref_id = ref.get("message_id")
-        if ref_id:
-            auth = by_id.get(ref_id)
-            if auth is None:
-                try:
-                    auth = api_get("/channels/%s/messages/%s" % (CHANNEL, ref_id))
-                except Exception:
-                    auth = None
-        if auth is None:
-            # Fallback: most recent intake message shortly before this one.
-            cand = [x for x in msgs if is_intake_auth(x) and int(x["id"]) < int(m["id"])]
-            if cand:
-                newest = max(cand, key=lambda x: int(x["id"]))
-                # Discord snowflake -> ms since epoch
-                dt_ms = (int(m["id"]) >> 22) - (int(newest["id"]) >> 22)
-                if dt_ms <= REPLY_WINDOW_MIN * 60 * 1000:
-                    auth = newest
+        auth = find_auth(m, msgs, by_id)
         if auth is None or not is_intake_auth(auth):
             print("[skip] run-test msg %s by %s has no linked COTHE authorization — ignored"
                   % (m["id"], operator), file=sys.stderr)
@@ -194,11 +244,18 @@ def process():
                                         "ip": info.get("ip"), "reason": reason}
                     core.save_seen(seen)
                 continue
+            payment = payments.find_payment(auth["id"])
+            if not payment:
+                print(core.NO_PAYMENT_MSG, file=sys.stderr)
+                if not DRY and payments.mark_nopay_notified(m["id"]):
+                    core.post_webhook(content=core.NO_PAYMENT_MSG + " (auth `%s`)" % auth["id"])
+                continue  # not marked seen: can run once payment is recorded
             # Announce + scan + report (reuse core logic).
             start = ("▶️ **Started by %s** — non-destructive external assessment of Client IP "
                      "`%s`%s. Authorized by %s." % (operator, info["ip"],
                      (" for **%s**" % info["company"]) if info.get("company") else "",
                      info.get("signed_by") or "—"))
+            start += " Run started by %s. Paid: %s." % (operator, payments.describe(payment))
             print(start, file=sys.stderr)
             if DRY:
                 print("[DRY] would scan %s for auth %s" % (info["ip"], auth["id"]))
@@ -206,7 +263,7 @@ def process():
             core.post_webhook(content=start)
             scan = core.run_scan(info["ip"])
             report = core.build_report(scan, operator, info.get("company"),
-                                       info.get("signed_by"), auth["id"])
+                                       info.get("signed_by"), auth["id"], payment)
             core.os.makedirs(core.REPORTS, exist_ok=True)
             md = os.path.join(core.REPORTS, "report-%s-%s.md"
                               % (info["ip"].replace(":", "_"), scan["stamp"]))

@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Unit tests for quote approval gate in cothe_run_test (no Discord, no scan)."""
 import json, os, sys, tempfile
+_PAY_DIR = tempfile.mkdtemp()
+os.environ["COTHE_PAYMENTS_FILE"] = os.path.join(_PAY_DIR, "payments.json")
+os.environ.pop("STRIPE_SECRET_KEY", None)
+os.environ["COTHE_DISCORD_BOT_TOKEN"] = "test-token-not-real"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cothe_run_test as core
+import cothe_payments as payments
 
 posts = []
 core.post_webhook = lambda **kw: posts.append(kw) or True
@@ -91,7 +96,9 @@ def main():
     assert code == 2 and posts and "quote not approved/signed" in posts[0]["content"], (code, posts)
     print("ok refusal posts quote gate message (mocked webhook)")
 
-    def run_main(ans, auth_id):
+    def run_main(ans, auth_id, pay=True):
+        if pay and not payments.find_payment(auth_id):
+            payments.record_cash(auth_id, 199, "Cash Tester", "cashtester", "src-" + auth_id)
         fd, path = tempfile.mkstemp(suffix=".json"); os.close(fd)
         json.dump(ans, open(path, "w")); posts.clear()
         old = sys.argv
@@ -144,6 +151,50 @@ def main():
     a = make_answers(quote=q); a["scope_check"] = {"answers": {"use": "business", "devices": 14, "sites": 1}}
     code, _ = run_main(a, "scope-extras"); assert code == "scan", code
     print("ok extras cover 14 devices")
+
+    # ---- payment gate ----
+    code, msgs = run_main(make_answers(), "pay-none", pay=False)
+    assert code == 4 and msgs == [core.NO_PAYMENT_MSG], (code, msgs)
+    print("ok no payment refused")
+    payments.record_cash("pay-cash", 249, "Martin", "martin_c", "src-pay-cash", "Acme")
+    code, msgs = run_main(make_answers(), "pay-cash", pay=False)
+    assert code == "scan", (code, msgs)
+    print("ok cash payment passes")
+    assert "Run started by T" in msgs[0] and "Paid: cash $249, recorded by Martin" in msgs[0], msgs
+    print("ok started msg:", msgs[0][-60:])
+    rep = core.build_report({"ip": "8.8.8.8", "ports": []}, "T", "Acme", "Jane Doe", "pay-cash",
+                            payments.find_payment("pay-cash"))
+    assert "Paid:** cash $249, recorded by Martin" in rep
+    print("ok report includes payment")
+    os.environ["STRIPE_SECRET_KEY"] = ""
+    assert payments.find_payment("nope") is None
+    print("ok stripe skipped quietly without key")
+    assert payments.parse_paid_cash("PAID CASH 249") == (True, 249.0)
+    assert payments.parse_paid_cash("paid cash") == (True, None)
+    assert payments.parse_paid_cash("paid cash please")[0] is False
+
+    # ---- watcher: paid cash recorded once, only when linked to an intake auth (mock Discord) ----
+    import cothe_watch_run_test as w
+    w.download_answers = lambda m, d: None
+    w.auth_company = lambda a: "Acme"
+    w.refresh_requesters = lambda m: None
+    T0 = 1558462561454657566
+    sf = lambda mins: str(T0 + ((mins * 60000) << 22))
+    auth = {"id": sf(0), "webhook_id": "x", "author": {"username": "COTHE Intake"},
+            "attachments": [{"filename": "answers.json", "url": "u"}], "content": ""}
+    pay = {"id": sf(5), "content": "Paid Cash 249", "message_reference": {"message_id": auth["id"]},
+           "author": {"username": "martin_c", "global_name": "Martin"}}
+    stray = {"id": sf(300), "content": "paid cash", "author": {"username": "bob"}}
+    msgs = [stray, pay, auth]
+    w.api_get = lambda path: msgs
+    posts.clear()
+    w.process(); w.process()
+    pm = [p["content"] for p in posts if "Payment recorded" in (p.get("content") or "")]
+    assert pm == ["💵 Payment recorded — cash $249 by Martin (@martin_c) for Acme (auth %s)" % auth["id"]], posts
+    rec = payments.find_payment(auth["id"])
+    assert rec["recorded_by"] == "Martin" and rec["recorded_by_username"] == "martin_c" and rec["at"]
+    assert payments.find_payment(stray["id"]) is None and len([k for k in payments.load_payments() if k == auth["id"]]) == 1
+    print("ok watcher records paid cash once; ignores unlinked/out-of-window")
 
     print("ALL PASS")
     return 0
