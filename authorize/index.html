@@ -1187,6 +1187,34 @@
         while (s.length % 4) s += "=";
         return decodeURIComponent(escape(atob(s)));
       }
+      function b64urlBytes(s) {
+        s = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
+        while (s.length % 4) s += "=";
+        var bin = atob(s), u = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        return u;
+      }
+      /* q formats: "z"+b64url(deflate-raw(short JSON)), "j"+b64url(short JSON), legacy b64url(long JSON) starting "ey" */
+      function decodeQParam(raw) {
+        var tag = raw.charAt(0), body = raw.slice(1);
+        if (tag === "j") return Promise.resolve(fromShort(JSON.parse(new TextDecoder().decode(b64urlBytes(body)))));
+        if (tag === "z") {
+          if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("This browser cannot open compressed quote links; please update it or use Chrome/Edge/Firefox/Safari."));
+          var ds = new DecompressionStream("deflate-raw");
+          return new Response(new Blob([b64urlBytes(body)]).stream().pipeThrough(ds)).text().then(function (t) { return fromShort(JSON.parse(t)); });
+        }
+        return Promise.resolve(JSON.parse(b64urlDecode(raw)));
+      }
+      function fromShort(c) {
+        if (!c || typeof c !== "object") throw new Error("bad quote");
+        return {
+          quote_id: c.i, created: c.c, prepared_by: c.r, tier: c.t, lines: c.l, state: c.s, use: c.u,
+          localRate: c.lr || 0, discount: !!c.d, subtotal: c.st, discountAmt: c.da || 0, taxable: c.tb,
+          taxRate: c.tr, tax: c.tx, oneTimeTotal: c.ot, monitoring: c.m || "None", monthly: c.mo || 0,
+          monthlyTax: c.mx || 0, monthlyTotal: c.mt || 0, client_name: c.n, client_email: c.e,
+          client_company: c.co, tier_id: c.ti, extra_devices: c.xd || 0, extra_sites: c.xs || 0, quote_hash: c.h
+        };
+      }
       function expandCompactQuote(c) {
         if (!c || typeof c !== "object") throw new Error("bad quote");
         var created = c.created || c.createdAt || "";
@@ -1229,8 +1257,8 @@
         var raw = null;
         try { raw = new URLSearchParams(location.search).get("q"); } catch (e) { raw = null; }
         if (!raw) return;
-        try {
-          var compact = JSON.parse(b64urlDecode(raw));
+        try { localStorage.removeItem("cothe_quote"); } catch (e) {}
+        window.COTHE_QUOTE_READY = decodeQParam(raw).then(function (compact) {
           var q = expandCompactQuote(compact);
           var expected = String(compact.quote_hash || "").toLowerCase();
           var actual = quoteHash(q);
@@ -1238,10 +1266,13 @@
           q.quote_hash = actual;
           try { localStorage.setItem("cothe_quote", JSON.stringify(q)); } catch (e) {}
           window.COTHE_QUOTE_FROM_LINK = true;
-        } catch (err) {
-          window.COTHE_QUOTE_LINK_ERROR = "This quote link is invalid or was altered. Ask your COTHE rep for a new approval link.";
+        }).catch(function (err) {
+          window.COTHE_QUOTE_LINK_ERROR = (err && /browser cannot/.test(err.message)) ? err.message : "This quote link is invalid or was altered. Ask your COTHE rep for a new approval link.";
           try { localStorage.removeItem("cothe_quote"); } catch (e) {}
-        }
+        }).then(function () {
+          if (typeof renderQuoteApproval === "function") renderQuoteApproval();
+          if (typeof window.COTHE_AFTER_QUOTE_LOAD === "function") window.COTHE_AFTER_QUOTE_LOAD();
+        });
       })();
 
       function renderQuoteApproval() {
@@ -1339,7 +1370,8 @@
         el.textContent = bad.length ? "\u26a0\ufe0f " + bad.join(", ") + " differ" + (bad.length === 1 ? "s" : "") +
           " from the quote. COTHE can only run the assessment when these match the quote." : "";
       }
-      (function prefillFromQuote() {
+      var prefillListeners = false;
+      function prefillFromQuote() {
         var q = storedQuote();
         if (!q) return;
         function fill(id, v) { var el = document.getElementById(id); if (el && v && !el.value) el.value = v; }
@@ -1348,12 +1380,19 @@
         fill("clientOrg", q.clientCompany);
         fill("clientSigName", q.clientName);
         fill("quoteApproveName", q.clientName);
+        if (prefillListeners) { updateQuoteMatchWarn(); return; }
+        prefillListeners = true;
         ["clientContact", "clientEmail", "clientOrg", "clientSigName"].forEach(function (id) {
           var el = document.getElementById(id); if (el) el.addEventListener("input", updateQuoteMatchWarn);
         });
         document.addEventListener("input", function (e) { if (e.target && e.target.id === "quoteApproveName") updateQuoteMatchWarn(); });
         updateQuoteMatchWarn();
-      })();
+      }
+      prefillFromQuote();
+      window.COTHE_AFTER_QUOTE_LOAD = function () {
+        prefillFromQuote();
+        if (typeof updateScopeNote === "function") updateScopeNote();
+      };
 
       /* ---- Scope vs quote (mirrors validate_scope in tools/cothe_run_test.py) ---- */
       var TIER_CAPS = { home: { kind: "home", max: null }, remote: { kind: "home", max: null }, smb: { kind: "business", max: 10 }, smbp: { kind: "business", max: 25 } };
