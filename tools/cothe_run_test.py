@@ -314,6 +314,13 @@ def _money(v):
         return "0.00"
 
 
+def _int(v):
+    try:
+        return max(0, int(round(float(v or 0))))
+    except Exception:
+        return 0
+
+
 def quote_canonical(q):
     """Canonical JSON of quote line items + totals (must match authorize/index.html quoteCanonical)."""
     from decimal import Decimal, ROUND_HALF_UP
@@ -335,6 +342,12 @@ def quote_canonical(q):
         "monthlyTax": _money(q.get("monthlyTax")),
         "monthlyTotal": _money(q.get("monthlyTotal")),
         "salesRep": str(q.get("salesRep") or ""),
+        "clientName": str(q.get("clientName") or "").strip(),
+        "clientEmail": str(q.get("clientEmail") or "").strip(),
+        "clientCompany": str(q.get("clientCompany") or "").strip(),
+        "tierId": str(q.get("tierId") or ""),
+        "extraDevices": _int(q.get("extraDevices")),
+        "extraSites": _int(q.get("extraSites")),
     }
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
@@ -366,6 +379,101 @@ def validate_quote(info):
     return r
 
 
+def _norm_name(v):
+    return " ".join(str(v or "").split()).lower()
+
+
+def _norm_email(v):
+    return str(v or "").strip().lower()
+
+
+def _contact_name_matches(contact, name):
+    c, n = _norm_name(contact), _norm_name(name)
+    if not n:
+        return False
+    if c == n:
+        return True
+    # allow "Jane Doe, Owner" / "Jane Doe - Owner" (contact field holds name & title)
+    if not c.startswith(n):
+        return False
+    return re.match(r"^\s*[,\-\u2013\u2014(|]", c[len(n):]) is not None
+
+
+def mask_email(v):
+    v = str(v or "").strip()
+    if not v:
+        return "(blank)"
+    if "@" not in v:
+        return v[:1] + "***"
+    local, dom = v.split("@", 1)
+    return local[:1] + "***@" + dom
+
+
+def _shown(v):
+    v = str(v or "").strip()
+    return ('"%s"' % v) if v else "(blank)"
+
+
+def validate_quote_match(info):
+    """Independently recompute authorization-vs-quote consistency (ignores client-sent quote_match).
+    Returns list of mismatch strings (empty = OK)."""
+    q = info.get("quote")
+    if not isinstance(q, dict):
+        return ["quote: no quote attached"]
+    r = []
+    if not str(q.get("quote_id") or "").strip():
+        r.append("quote_id: missing from quote")
+    ae, qe = info.get("client_email", ""), q.get("clientEmail", "")
+    if not _norm_email(qe) or _norm_email(ae) != _norm_email(qe):
+        r.append("client email: %s vs quote %s" % (mask_email(ae), mask_email(qe)))
+    an, qn = info.get("client_contact", ""), q.get("clientName", "")
+    if not _contact_name_matches(an, qn):
+        r.append("client name: %s vs quote %s" % (_shown(an), _shown(qn)))
+    sn, qa = info.get("signed_by", ""), info.get("quote_approved_by", "")
+    if not _norm_name(qa) or _norm_name(sn) != _norm_name(qa):
+        r.append("signer: %s vs quote approver %s" % (_shown(sn), _shown(qa)))
+    ac, qc = info.get("company", ""), q.get("clientCompany", "")
+    if _norm_name(ac) and _norm_name(qc) and _norm_name(ac) != _norm_name(qc):
+        r.append("company: %s vs quote %s" % (_shown(ac), _shown(qc)))
+    return r
+
+
+# Base tiers (must match quote builder PRICING). max_devices None = no device cap.
+TIERS = {
+    "home":   {"kind": "home", "max_devices": None},
+    "remote": {"kind": "home", "max_devices": None},
+    "smb":    {"kind": "business", "max_devices": 10},
+    "smbp":   {"kind": "business", "max_devices": 25},
+}
+
+
+def validate_scope(info):
+    """Independently recompute scope (client answers) vs quote coverage.
+    Returns list of under-coverage reasons (empty = OK)."""
+    q, sc = info.get("quote"), info.get("scope") or {}
+    if not isinstance(q, dict):
+        return []
+    use = str(sc.get("use") or "").strip().lower()
+    if use not in ("home", "business"):
+        return ["scope answers missing (Home or Business, devices, sites)"]
+    devices, sites = _int(sc.get("devices")), max(1, _int(sc.get("sites")))
+    tid = str(q.get("tierId") or "")
+    t = TIERS.get(tid)
+    if not t:
+        return ["quote has no recognizable base tier (tierId %s) — rep must re-issue quote" % _shown(tid)]
+    r = []
+    if use == "business" and t["kind"] == "home":
+        r.append("business use but quote is a home tier")
+    if t["max_devices"] is not None:
+        cov = t["max_devices"] + _int(q.get("extraDevices"))
+        if devices > cov:
+            r.append("quote covers %d devices but client listed %d" % (cov, devices))
+    cov_s = 1 + _int(q.get("extraSites"))
+    if sites > cov_s:
+        r.append("quote covers %d site(s) but client listed %d" % (cov_s, sites))
+    return r
+
+
 def extract_from_answers(path):
     d = json.load(open(path))
     a = d.get("authorizingPerson", {})
@@ -374,6 +482,9 @@ def extract_from_answers(path):
     return {
         "ip": e.get("clientIp", ""),
         "company": c.get("organization", ""),
+        "client_contact": c.get("contact", "") or "",
+        "client_email": c.get("email", "") or "",
+        "scope": (d.get("scope_check") or {}).get("answers") if isinstance(d.get("scope_check"), dict) else None,
         "signed_by": a.get("typedLegalName", ""),
         "sig": bool(a.get("signaturePresent")),
         "photo": bool(a.get("identityPhotoPresent")),
@@ -401,6 +512,13 @@ def validate_authorization(info):
     qr = validate_quote(info)
     if qr:
         missing.append("quote not approved/signed (" + ", ".join(qr) + ")")
+    elif "client_email" in info:  # answers.json mode: enforce auth/scope-vs-quote consistency
+        mr = validate_quote_match(info)
+        if mr:
+            missing.append("authorization doesn't match quote (" + "; ".join(mr) + ")")
+        sr = validate_scope(info)
+        if sr:
+            missing.append("quote under-covers scope (" + "; ".join(sr) + ")")
     return (len(missing) == 0, missing)
 
 
@@ -441,7 +559,21 @@ def main():
     if not ok:
         reason = "; ".join(missing)
         qr = validate_quote(info) if args.answers else []
-        if qr:
+        mr = validate_quote_match(info) if (args.answers and not qr) else []
+        sr = validate_scope(info) if (args.answers and not qr) else []
+        if mr or sr:
+            parts = []
+            if mr:
+                parts.append("⛔ **Won't run — authorization doesn't match quote** for IP `%s`:\n%s"
+                             % (ip or "?", "\n".join("• " + x for x in mr)))
+            if sr:
+                parts.append("⛔ **Won't run — quote needs update (under-covers scope)**%s:\n%s"
+                             % ("" if mr else " for IP `%s`" % (ip or "?"), "\n".join("• " + x for x in sr)))
+            other = [x for x in missing if not x.startswith(("authorization doesn't match quote", "quote under-covers scope"))]
+            if other:
+                parts.append("Also missing: " + "; ".join(other) + ".")
+            msg = "\n".join(parts) + "\nNo scan was performed."
+        elif qr:
             msg = ("⛔ **Won't run — quote not approved/signed** for IP `%s`: %s. "
                    "No scan was performed." % (ip or "?", reason))
         else:

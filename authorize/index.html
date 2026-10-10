@@ -523,6 +523,22 @@
     </p>
 
     <h3>1. Client Information</h3>
+    <div class="field" id="scopeBox" style="border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:12px">
+      <strong>Quick scope check</strong> <span class="muted" style="font-size:13px">— helps us make sure your quote is accurate and priced right.</span>
+      <div class="grid-2" style="margin-top:8px">
+        <div class="field"><label>Home or Business?</label>
+          <label style="display:inline;font-weight:normal"><input type="radio" name="scopeUse" value="home" /> Home</label>
+          <label style="display:inline;font-weight:normal;margin-left:12px"><input type="radio" name="scopeUse" value="business" /> Business</label></div>
+        <div class="field"><label>Wi-Fi network?</label>
+          <label style="display:inline;font-weight:normal"><input type="radio" name="scopeWifi" value="yes" /> Yes</label>
+          <label style="display:inline;font-weight:normal;margin-left:12px"><input type="radio" name="scopeWifi" value="no" /> No</label></div>
+        <div class="field"><label for="scopeDevices">Approx. number of devices <small>(computers, phones, cameras, printers)</small></label>
+          <input id="scopeDevices" type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 8" /></div>
+        <div class="field"><label for="scopeSites">Number of locations / sites</label>
+          <input id="scopeSites" type="number" min="1" step="1" inputmode="numeric" placeholder="1" /></div>
+      </div>
+      <p id="scopeNote" role="status" aria-live="polite" hidden style="margin:6px 0 0;padding:6px 10px;font-size:13px;border-radius:6px"></p>
+    </div>
     <div class="grid-2">
       <div class="field">
         <label for="clientOrg">Client organization / business name</label>
@@ -536,6 +552,7 @@
         <label for="clientEmail">Email</label>
         <input id="clientEmail" type="email" placeholder="name@company.com" />
       </div>
+      <p id="quoteMatchWarn" role="status" aria-live="polite" hidden style="grid-column:1/-1;margin:0;padding:6px 10px;font-size:13px;border-radius:6px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d"></p>
       <div class="field">
         <label for="clientPhone">Phone</label>
         <input id="clientPhone" type="tel" placeholder="(555) 555-5555" />
@@ -1098,6 +1115,7 @@
         if (!isFinite(x)) x = 0;
         return (Math.round(x * 10000 + (x >= 0 ? 1e-8 : -1e-8)) / 10000).toFixed(4);
       }
+      function intCanon(v) { var x = Math.round(Number(v) || 0); return x > 0 ? x : 0; }
       function quoteCanonical(q) {
         var obj = {
           tier: String(q.tier || ""),
@@ -1112,7 +1130,13 @@
           monthly: moneyCanon(q.monthly),
           monthlyTax: moneyCanon(q.monthlyTax),
           monthlyTotal: moneyCanon(q.monthlyTotal),
-          salesRep: String(q.salesRep || "")
+          salesRep: String(q.salesRep || ""),
+          clientName: String(q.clientName || "").trim(),
+          clientEmail: String(q.clientEmail || "").trim(),
+          clientCompany: String(q.clientCompany || "").trim(),
+          tierId: String(q.tierId || ""),
+          extraDevices: intCanon(q.extraDevices),
+          extraSites: intCanon(q.extraSites)
         };
         return JSON.stringify(obj);
       }
@@ -1189,6 +1213,13 @@
           prepared_by: rep,
           createdAt: created || new Date().toISOString(),
           quote_id: c.quote_id || "",
+          clientName: c.client_name || c.clientName || "",
+          clientEmail: c.client_email || c.clientEmail || "",
+          clientCompany: c.client_company || c.clientCompany || "",
+          tierId: c.tier_id || c.tierId || "",
+          extraDevices: c.extra_devices || c.extraDevices || 0,
+          extraSites: c.extra_sites || c.extraSites || 0,
+          pricing: c.pricing && typeof c.pricing === "object" ? c.pricing : null,
           quote_hash: c.quote_hash || ""
         };
       }
@@ -1272,6 +1303,126 @@
       renderQuoteApproval();
       window.COTHE_renderQuoteApproval = renderQuoteApproval;
 
+      /* ---- Authorization vs quote consistency (mirrors tools/cothe_run_test.py) ---- */
+      function normName(v) { return String(v || "").replace(/\s+/g, " ").trim().toLowerCase(); }
+      function normEmail(v) { return String(v || "").trim().toLowerCase(); }
+      function contactNameMatches(contact, name) {
+        var c = normName(contact), n = normName(name);
+        if (!n) return false;
+        if (c === n) return true;
+        /* "Jane Doe, Owner" / "Jane Doe - Owner" */
+        return c.indexOf(n) === 0 && /^\s*[,\-\u2013\u2014(|]/.test(c.slice(n.length));
+      }
+      function computeQuoteMatch() {
+        var q = storedQuote();
+        if (!q) return { name_match: false, email_match: false, company_match: false, signer_matches_quote_approver: false, quote_loaded: false };
+        var org = val("clientOrg"), qc = q.clientCompany || "";
+        return {
+          quote_loaded: true,
+          name_match: contactNameMatches(val("clientContact"), q.clientName),
+          email_match: !!normEmail(q.clientEmail) && normEmail(val("clientEmail")) === normEmail(q.clientEmail),
+          company_match: (org && qc) ? normName(org) === normName(qc) : true,
+          signer_matches_quote_approver: !!normName(val("quoteApproveName")) && normName(val("clientSigName")) === normName(val("quoteApproveName"))
+        };
+      }
+      window.COTHE_computeQuoteMatch = computeQuoteMatch;
+      function updateQuoteMatchWarn() {
+        var el = document.getElementById("quoteMatchWarn"), q = storedQuote();
+        if (!el) return;
+        if (!q || !(q.clientName || q.clientEmail || q.clientCompany)) { el.hidden = true; return; }
+        var m = computeQuoteMatch(), bad = [];
+        if (q.clientName && !m.name_match) bad.push("name");
+        if (q.clientEmail && !m.email_match) bad.push("email");
+        if (!m.company_match) bad.push("company");
+        if (val("clientSigName") && val("quoteApproveName") && !m.signer_matches_quote_approver) bad.push("signer vs quote approver");
+        el.hidden = !bad.length;
+        el.textContent = bad.length ? "\u26a0\ufe0f " + bad.join(", ") + " differ" + (bad.length === 1 ? "s" : "") +
+          " from the quote. COTHE can only run the assessment when these match the quote." : "";
+      }
+      (function prefillFromQuote() {
+        var q = storedQuote();
+        if (!q) return;
+        function fill(id, v) { var el = document.getElementById(id); if (el && v && !el.value) el.value = v; }
+        fill("clientContact", q.clientName);
+        fill("clientEmail", q.clientEmail);
+        fill("clientOrg", q.clientCompany);
+        fill("clientSigName", q.clientName);
+        fill("quoteApproveName", q.clientName);
+        ["clientContact", "clientEmail", "clientOrg", "clientSigName"].forEach(function (id) {
+          var el = document.getElementById(id); if (el) el.addEventListener("input", updateQuoteMatchWarn);
+        });
+        document.addEventListener("input", function (e) { if (e.target && e.target.id === "quoteApproveName") updateQuoteMatchWarn(); });
+        updateQuoteMatchWarn();
+      })();
+
+      /* ---- Scope vs quote (mirrors validate_scope in tools/cothe_run_test.py) ---- */
+      var TIER_CAPS = { home: { kind: "home", max: null }, remote: { kind: "home", max: null }, smb: { kind: "business", max: 10 }, smbp: { kind: "business", max: 25 } };
+      var DEFAULT_PRICING = { tiers: [{ id: "home", name: "Home Security Check", price: 249, kind: "home" }, { id: "remote", name: "Remote external-only check", price: 129, kind: "home" },
+        { id: "smb", name: "Small Business (up to 10 devices, 1 site)", price: 895, kind: "business" }, { id: "smbp", name: "Small Business Plus (11–25 devices)", price: 1495, kind: "business" }], extraDevice: 35, extraSite: 295 };
+      function radioVal(n) { var r = document.querySelector('input[name="' + n + '"]:checked'); return r ? r.value : ""; }
+      function nInt(v) { var x = Math.round(Number(v) || 0); return x > 0 ? x : 0; }
+      function suggestPlan(use, devices, sites, pricing) {
+        var P = pricing || DEFAULT_PRICING, T = {};
+        (P.tiers || []).forEach(function (t) { T[t.id] = t; });
+        var xs = Math.max(0, sites - 1), opts = [];
+        if (use === "home") {
+          if (T.home) opts.push({ tier_id: "home", extra_devices: 0 });
+        } else {
+          if (T.smb) opts.push({ tier_id: "smb", extra_devices: Math.max(0, devices - 10) });
+          if (T.smbp) opts.push({ tier_id: "smbp", extra_devices: Math.max(0, devices - 25) });
+        }
+        opts.forEach(function (o) {
+          o.extra_sites = xs; o.tier_name = T[o.tier_id].name;
+          o.est_price = T[o.tier_id].price + o.extra_devices * (P.extraDevice || 0) + xs * (P.extraSite || 0);
+        });
+        opts.sort(function (a, b) { return a.est_price - b.est_price; });
+        var b = opts[0] || null;
+        if (b) b.summary = b.tier_name + (b.extra_devices ? " + " + b.extra_devices + " extra device" + (b.extra_devices > 1 ? "s" : "") : "") +
+          (b.extra_sites ? " + " + b.extra_sites + " extra site" + (b.extra_sites > 1 ? "s" : "") : "") + " (est. $" + b.est_price.toLocaleString("en-US") + ")";
+        return b;
+      }
+      function computeScopeCheck() {
+        var q = storedQuote();
+        var ans = { use: radioVal("scopeUse"), wifi: radioVal("scopeWifi"), devices: nInt(val("scopeDevices")), sites: Math.max(1, nInt(val("scopeSites")) || 1) };
+        var out = { answers: ans, quote_loaded: !!q, answered: !!ans.use && val("scopeDevices") !== "", matches_quote: null, under_covered: false, reasons: [], notes: [], suggested: null };
+        if (!q || !out.answered) return out;
+        var cap = TIER_CAPS[q.tierId];
+        out.quote_coverage = { tier_id: q.tierId || "", tier: q.tier, devices: cap && cap.max != null ? cap.max + nInt(q.extraDevices) : null, sites: 1 + nInt(q.extraSites) };
+        if (!cap) { out.under_covered = true; out.reasons.push("your quote's base service couldn't be read"); }
+        else {
+          if (ans.use === "business" && cap.kind === "home") { out.under_covered = true; out.reasons.push("you chose Business but the quote is for a Home service"); }
+          if (ans.use === "home" && cap.kind === "business") out.notes.push("you chose Home but the quote is for a Business service — a Home check may cost less");
+          if (out.quote_coverage.devices != null && ans.devices > out.quote_coverage.devices) { out.under_covered = true; out.reasons.push("your quote covers " + out.quote_coverage.devices + " devices but you listed " + ans.devices); }
+        }
+        if (ans.sites > out.quote_coverage.sites) { out.under_covered = true; out.reasons.push("your quote covers " + out.quote_coverage.sites + " site" + (out.quote_coverage.sites > 1 ? "s" : "") + " but you listed " + ans.sites); }
+        var sug = suggestPlan(ans.use, ans.devices, ans.sites, q.pricing);
+        out.suggested = sug;
+        if (sug && cap && !out.under_covered && sug.tier_id !== q.tierId && cap.kind === ans.use) out.notes.push("a lower-cost option may fit: " + sug.summary);
+        out.matches_quote = !out.under_covered && !out.notes.length;
+        return out;
+      }
+      window.COTHE_computeScopeCheck = computeScopeCheck;
+      function updateScopeNote() {
+        var el = document.getElementById("scopeNote"), sc = computeScopeCheck();
+        if (!el) return;
+        if (!sc.quote_loaded || !sc.answered) { el.hidden = true; return; }
+        el.hidden = false;
+        if (sc.under_covered) {
+          el.style.cssText += ";background:#fef3c7;color:#92400e;border:1px solid #fcd34d";
+          el.textContent = "Heads up: " + sc.reasons.join("; ") + " — your rep will update the quote" + (sc.suggested ? " (likely " + sc.suggested.summary + ")" : "") + ".";
+        } else if (sc.notes.length) {
+          el.style.cssText += ";background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe";
+          el.textContent = "Note: " + sc.notes.join("; ") + ". Your rep can adjust the quote.";
+        } else {
+          el.style.cssText += ";background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0";
+          el.textContent = "✅ Your answers match your quote.";
+        }
+      }
+      (function () {
+        var box = document.getElementById("scopeBox");
+        if (box) { box.addEventListener("input", updateScopeNote); box.addEventListener("change", updateScopeNote); }
+      })();
+
       function collectAnswers() {
         var sig = getSignaturePngDataUrl();
         return {
@@ -1332,6 +1483,11 @@
             return q ? quoteHash(q) : "";
           })(),
           quote_signaturePngDataUrl: quoteSigPad ? quoteSigPad.getDataUrl() : null,
+          scope_check: computeScopeCheck(),
+          quote_match: (function () {
+            var m = computeQuoteMatch();
+            return { name_match: m.name_match, email_match: m.email_match, company_match: m.company_match, signer_matches_quote_approver: m.signer_matches_quote_approver };
+          })(),
           serviceProviderRep: {
             printedName: val("providerSigName"),
             title: val("providerSigTitle"),
@@ -1424,6 +1580,14 @@
             { name: "Quote (estimate)", value: clip(quoteText(d.quote), 1000) },
             { name: "Quote ID", value: clip(d.quote && d.quote !== "none" && d.quote.quote_id ? d.quote.quote_id : "—", 80), inline: true },
             { name: "Quote hash", value: clip(d.quote_hash || "—", 80), inline: true },
+            { name: "📏 Scope check", value: (function (sc) {
+                if (!sc || !sc.quote_loaded) return "— (no quote)";
+                if (!sc.answered) return "⚠️ Scope questions not answered";
+                if (sc.under_covered) return clip("⚠️ Quote needs update: " + sc.reasons.join("; ") + (sc.suggested ? ", suggested: " + sc.suggested.summary : ""), 1000);
+                if (sc.notes.length) return clip("✅ covered — note: " + sc.notes.join("; "), 1000);
+                return "📏 Scope check: ✅ matches quote";
+              })(d.scope_check) },
+            { name: "Quote match", value: d.quote && d.quote !== "none" ? ["name_match", "email_match", "company_match", "signer_matches_quote_approver"].map(function (k) { return (d.quote_match[k] ? "✅ " : "❌ ") + k; }).join("\n") : "—", inline: true },
             { name: "🧾 Quote approved", value: d.quote_approved
                 ? ("🧾 Quote approved: ✅ by " + clip(d.quote_approved_by || "?", 120) + " on " + clip(d.quote_approved_date || "?", 40))
                 : "❌ Not approved", inline: true },
