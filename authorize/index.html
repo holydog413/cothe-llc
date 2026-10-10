@@ -1158,9 +1158,72 @@
       }
       function quoteHash(q) { return sha256HexSync(quoteCanonical(q)); }
 
+      function b64urlDecode(s) {
+        s = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
+        while (s.length % 4) s += "=";
+        return decodeURIComponent(escape(atob(s)));
+      }
+      function expandCompactQuote(c) {
+        if (!c || typeof c !== "object") throw new Error("bad quote");
+        var created = c.created || c.createdAt || "";
+        if (created && created.length === 10) created = created + "T00:00:00.000Z";
+        var rep = c.prepared_by || c.salesRep || "";
+        return {
+          tier: c.tier || "None",
+          lines: c.lines || [],
+          state: c.state || "(not selected)",
+          use: c.use || "personal",
+          localRate: c.localRate || 0,
+          discount: !!c.discount,
+          subtotal: c.subtotal,
+          discountAmt: c.discountAmt,
+          taxable: c.taxable,
+          taxRate: c.taxRate,
+          tax: c.tax,
+          oneTimeTotal: c.oneTimeTotal,
+          monitoring: c.monitoring || "None",
+          monthly: c.monthly || 0,
+          monthlyTax: c.monthlyTax || 0,
+          monthlyTotal: c.monthlyTotal || 0,
+          salesRep: rep,
+          prepared_by: rep,
+          createdAt: created || new Date().toISOString(),
+          quote_id: c.quote_id || "",
+          quote_hash: c.quote_hash || ""
+        };
+      }
+      window.COTHE_QUOTE_FROM_LINK = false;
+      window.COTHE_QUOTE_LINK_ERROR = "";
+      (function loadQuoteFromQuery() {
+        var raw = null;
+        try { raw = new URLSearchParams(location.search).get("q"); } catch (e) { raw = null; }
+        if (!raw) return;
+        try {
+          var compact = JSON.parse(b64urlDecode(raw));
+          var q = expandCompactQuote(compact);
+          var expected = String(compact.quote_hash || "").toLowerCase();
+          var actual = quoteHash(q);
+          if (!expected || expected !== actual) throw new Error("hash mismatch");
+          q.quote_hash = actual;
+          try { localStorage.setItem("cothe_quote", JSON.stringify(q)); } catch (e) {}
+          window.COTHE_QUOTE_FROM_LINK = true;
+        } catch (err) {
+          window.COTHE_QUOTE_LINK_ERROR = "This quote link is invalid or was altered. Ask your COTHE rep for a new approval link.";
+          try { localStorage.removeItem("cothe_quote"); } catch (e) {}
+        }
+      })();
+
       function renderQuoteApproval() {
         var body = document.getElementById("quoteApproveBody");
         if (!body) return;
+        if (window.COTHE_QUOTE_LINK_ERROR) {
+          body.innerHTML = '<p class="q-none" style="background:#fee2e2;border-color:#dc2626;color:#991b1b">' +
+            window.COTHE_QUOTE_LINK_ERROR.replace(/[&<>]/g, function (c) {
+              return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];
+            }) + '</p>';
+          quoteSigPad = null;
+          return;
+        }
         var q = storedQuote();
         if (!q) {
           body.innerHTML = '<p class="q-none">No quote attached — a COTHE rep must prepare one</p>';
@@ -1185,20 +1248,26 @@
           '<button type="button" class="btn ghost" id="btnClearQuoteSig">Clear</button>' +
           '<button type="button" class="btn ghost" id="btnTypedQuoteSig">Use typed name</button></div>' +
           '<p class="sig-status" id="quoteSigStatus" aria-live="polite"></p>' +
-          '<p class="muted" style="font-size:12px;margin:6px 0 0">You can remove the attached quote and start over from the sales quote builder.</p>' +
-          '<button type="button" class="btn ghost" id="btnRemoveQuote" style="margin-top:6px">Remove quote</button>';
-        document.getElementById("quoteLinesBox").textContent = quoteText(q);
+          (window.COTHE_QUOTE_FROM_LINK
+            ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Quote loaded from your COTHE approval link (read-only). Review totals, then approve and sign below.</p>'
+            : '<p class="muted" style="font-size:12px;margin:6px 0 0">You can remove the attached quote and start over from the sales quote builder.</p>' +
+              '<button type="button" class="btn ghost" id="btnRemoveQuote" style="margin-top:6px">Remove quote</button>');
+        var qidLine = q.quote_id ? ("Quote ID: " + q.quote_id + "\n") : "";
+        document.getElementById("quoteLinesBox").textContent = qidLine + quoteText(q);
         var qd = document.getElementById("quoteApproveDate");
         if (qd && !qd.value) qd.value = new Date().toISOString().slice(0, 10);
         quoteSigPad = createSigPad({
           canvasId: "quoteSigCanvas", wrapId: "quoteSigPadWrap", statusId: "quoteSigStatus",
           typedNameId: "quoteApproveName", clearBtnId: "btnClearQuoteSig", typedBtnId: "btnTypedQuoteSig"
         });
-        document.getElementById("btnRemoveQuote").onclick = function () {
-          try { localStorage.removeItem("cothe_quote"); } catch (e) {}
-          quoteSigPad = null;
-          renderQuoteApproval();
-        };
+        var rm = document.getElementById("btnRemoveQuote");
+        if (rm) {
+          rm.onclick = function () {
+            try { localStorage.removeItem("cothe_quote"); } catch (e) {}
+            quoteSigPad = null;
+            renderQuoteApproval();
+          };
+        }
       }
       renderQuoteApproval();
       window.COTHE_renderQuoteApproval = renderQuoteApproval;
@@ -1353,6 +1422,8 @@
             { name: "Special instructions", value: clip(e.specialInstructions, 1000) },
             { name: "Sales rep", value: clip(d.quote && d.quote !== "none" && d.quote.salesRep ? d.quote.salesRep : "— (no quote / self-serve)", 200), inline: true },
             { name: "Quote (estimate)", value: clip(quoteText(d.quote), 1000) },
+            { name: "Quote ID", value: clip(d.quote && d.quote !== "none" && d.quote.quote_id ? d.quote.quote_id : "—", 80), inline: true },
+            { name: "Quote hash", value: clip(d.quote_hash || "—", 80), inline: true },
             { name: "🧾 Quote approved", value: d.quote_approved
                 ? ("🧾 Quote approved: ✅ by " + clip(d.quote_approved_by || "?", 120) + " on " + clip(d.quote_approved_date || "?", 40))
                 : "❌ Not approved", inline: true },
