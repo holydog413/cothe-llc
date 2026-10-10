@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Authorize Testing — COTHE LLC</title>
+  <style>
+    :root {
+      --ink: #1a1f2e;
+      --muted: #5a6478;
+      --line: #c8d0dc;
+      --accent: #1e4d8c;
+      --accent-soft: #e8f0fa;
+      --warn-bg: #fff8e6;
+      --warn-border: #e6c35c;
+      --paper: #ffffff;
+      --page: #eef1f6;
+      --ok: #1b7a3d;
+      --danger: #a33;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background: var(--page);
+      line-height: 1.45;
+      font-size: 14px;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: var(--ink);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+
+    .toolbar h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+
+    .toolbar .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .toolbar button, .btn {
+      border: 0;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #fff;
+      color: var(--ink);
+      font-family: inherit;
+    }
+
+    .toolbar button.primary, .btn.primary { background: #3b82f6; color: #fff; }
+    .btn.ghost { background: #eef2f7; color: var(--ink); border: 1px solid var(--line); }
+    .btn.danger { background: #fde8e8; color: var(--danger); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    .page {
+      max-width: 860px;
+      margin: 24px auto 48px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 4px 24px rgba(26,31,46,.08);
+      padding: 40px 48px;
+    }
+
+    .llc-banner {
+      background: var(--accent-soft);
+      border: 1px solid #b8cce8;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 28px;
+    }
+
+    .llc-banner label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .llc-banner input {
+      width: 100%;
+      border: 1px solid #9bb6d9;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      background: #fff;
+    }
+
+    .llc-banner .hint {
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .doc-header {
+      border-bottom: 3px solid var(--accent);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+
+    .doc-header .eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--accent);
+      margin: 0 0 6px;
+    }
+
+    .doc-header h2 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      line-height: 1.25;
+      color: var(--ink);
+    }
+
+    .doc-header .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    h3 {
+      margin: 28px 0 10px;
+      font-size: 15px;
+      color: var(--accent);
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+    }
+
+    p { margin: 0 0 10px; }
+
+    .callout {
+      background: var(--warn-bg);
+      border-left: 4px solid var(--warn-border);
+      padding: 12px 14px;
+      margin: 14px 0;
+      border-radius: 0 6px 6px 0;
+      font-size: 13px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 18px;
+    }
+
+    .field { margin-bottom: 10px; }
+
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 6px 2px;
+      font: inherit;
+      color: var(--ink);
+      background: transparent;
+      border-radius: 0;
+    }
+
+    .field textarea {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      min-height: 72px;
+      resize: vertical;
+    }
+
+    .field input:focus,
+    .field textarea:focus,
+    .llc-banner input:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: #f7faff;
+    }
+
+    .check-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin: 8px 0;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fafbfd;
+    }
+
+    .check-row input { margin-top: 3px; flex-shrink: 0; }
+    .check-row label { font-size: 13px; cursor: pointer; }
+    .check-row.default { border-color: #9bc4a0; background: #f3faf4; }
+    .check-row.optional { border-style: dashed; }
+
+    .sig-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 20px;
+      margin-top: 18px;
+      align-items: start;
+    }
+
+    .sig-block {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: #fafbfd;
+    }
+
+    .sig-block h4 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      color: var(--accent);
+    }
+
+    .sig-meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 0 0 6px;
+    }
+
+    .sig-pad-wrap {
+      position: relative;
+      border: 2px dashed #9bb6d9;
+      border-radius: 8px;
+      background: #fff;
+      touch-action: none;
+      overflow: hidden;
+    }
+
+    .sig-pad-wrap.has-ink { border-style: solid; border-color: var(--accent); }
+
+    #sigCanvas {
+      display: block;
+      width: 100%;
+      height: 160px;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .sig-pad-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      color: #9aa6b8;
+      font-size: 13px;
+      font-style: italic;
+    }
+
+    .sig-pad-wrap.has-ink .sig-pad-hint { display: none; }
+
+    .sig-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 12px;
+    }
+
+    .sig-status {
+      font-size: 12px;
+      color: var(--ok);
+      min-height: 1.2em;
+      margin: 0 0 8px;
+    }
+
+    .photo-block label.photo-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .photo-help {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+
+    .photo-preview-box {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      max-height: 280px;
+      border: 2px dashed #9bb6d9;
+      border-radius: 8px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .photo-preview-box.has-photo { border-style: solid; border-color: var(--accent); }
+
+    .photo-preview-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .photo-preview-box .placeholder {
+      text-align: center;
+      padding: 12px;
+      color: #9aa6b8;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .photo-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .photo-actions .btn { width: 100%; text-align: center; }
+
+    .photo-actions input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      overflow: hidden;
+    }
+
+    .provider-sig-line {
+      border-bottom: 1px solid var(--ink);
+      height: 36px;
+      margin: 18px 0 6px;
+    }
+
+    .download-panel {
+      margin-top: 24px;
+      padding: 16px;
+      border: 1px solid #b8cce8;
+      border-radius: 8px;
+      background: var(--accent-soft);
+    }
+
+    .download-panel h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--accent);
+    }
+
+    .download-panel p {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .download-panel .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .footer-note {
+      margin-top: 28px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .llc-name { font-weight: 700; color: var(--accent); }
+
+    @media print {
+      body { background: #fff; font-size: 11.5px; }
+      .toolbar, .sig-actions, .photo-actions, .download-panel { display: none !important; }
+      .page {
+        margin: 0;
+        border: 0;
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0;
+        max-width: none;
+      }
+      .sig-pad-wrap, .photo-preview-box { break-inside: avoid; }
+      .sig-pad-hint { display: none !important; }
+      #sigCanvas { height: 120px; }
+    }
+
+    @media (max-width: 720px) {
+      .page { margin: 12px; padding: 22px 16px; }
+      .grid-2, .sig-grid { grid-template-columns: 1fr; }
+      #sigCanvas { height: 180px; }
+      .photo-preview-box {
+        max-height: none;
+        aspect-ratio: 4 / 3;
+      }
+      .toolbar h1 { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="site-mini-nav" style="background:#0f172a;color:#fff;padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;font-family:Segoe UI,system-ui,sans-serif;font-size:13px;">
+    <a href="../" style="color:#fff;text-decoration:none;font-weight:700;">← COTHE LLC</a>
+    <span style="opacity:.85;">Authorization for network security assessment</span>
+    <a href="../#contact" style="color:#93c5fd;text-decoration:none;font-weight:600;">Contact / quote</a>
+  </div>
+
+  <div class="toolbar">
+    <h1>Network Assessment Authorization</h1>
+    <div class="actions">
+      <button type="button" id="btnDownloadJson" class="primary">Download answers</button>
+      <button type="button" onclick="window.print()">Print / Save PDF</button>
+    </div>
+  </div>
+
+  <main class="page">
+    <div class="llc-banner">
+      <label for="llcLegalName">LLC legal name (editable — used throughout this form)</label>
+      <input
+        id="llcLegalName"
+        type="text"
+        value="COTHE LLC"
+        placeholder="Your LLC Name, LLC"
+        autocomplete="organization"
+        aria-describedby="llcHint"
+      />
+      <p class="hint" id="llcHint">
+        Confirmed legal name: <strong>COTHE LLC</strong>. Change this field only if the official formation name differs; it updates every reference on the form.
+      </p>
+    </div>
+
+    <header class="doc-header">
+      <p class="eyebrow">Client Authorization Agreement</p>
+      <h2>Authorization for Network &amp; Security Assessment Services</h2>
+      <p class="sub">
+        Authorizing party (Service Provider): <span class="llc-name llc-sync">COTHE LLC</span>
+        and its agents, employees, and independent contractors
+      </p>
+    </header>
+
+    <p>
+      This Authorization Form (“Agreement”) is between the Client named below (“Client”) and
+      <span class="llc-name llc-sync">COTHE LLC</span> (“Service Provider,” “we,” or “us”), including any agents,
+      employees, or independent contractors engaged by <span class="llc-name llc-sync">COTHE LLC</span> to perform
+      the authorized work. By signing, Client authorizes <span class="llc-name llc-sync">COTHE LLC</span> and such
+      agents/contractors — not any individual personally outside the company — to perform the assessment activities
+      described below within the stated scope, schedule, and rules of engagement.
+    </p>
+
+    <h3>1. Client Information</h3>
+    <div class="grid-2">
+      <div class="field">
+        <label for="clientOrg">Client organization / business name</label>
+        <input id="clientOrg" type="text" placeholder="Legal or DBA name" />
+      </div>
+      <div class="field">
+        <label for="clientContact">Authorized contact name &amp; title</label>
+        <input id="clientContact" type="text" placeholder="Full name, title" />
+      </div>
+      <div class="field">
+        <label for="clientEmail">Email</label>
+        <input id="clientEmail" type="email" placeholder="name@company.com" />
+      </div>
+      <div class="field">
+        <label for="clientPhone">Phone</label>
+        <input id="clientPhone" type="tel" placeholder="(555) 555-5555" />
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="clientAddress">Business address</label>
+        <input id="clientAddress" type="text" placeholder="Street, city, state, ZIP" />
+      </div>
+    </div>
+
+    <h3>2. Engagement Scope</h3>
+    <div class="grid-2">
+      <div class="field">
+        <label for="engageStart">Start date</label>
+        <input id="engageStart" type="date" />
+      </div>
+      <div class="field">
+        <label for="engageEnd">End date (or “TBD”)</label>
+        <input id="engageEnd" type="text" placeholder="YYYY-MM-DD or TBD" />
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="targets">In-scope systems / networks / IP ranges / URLs</label>
+        <textarea id="targets" placeholder="List IP ranges, hostnames, domains, cloud accounts, or other assets expressly in scope."></textarea>
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="outOfScope">Out of scope / exclusions</label>
+        <textarea id="outOfScope" placeholder="Systems, networks, or activities that must not be tested."></textarea>
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="objectives">Assessment objectives</label>
+        <textarea id="objectives" placeholder="e.g., network discovery, vulnerability identification, configuration review, wireless survey, etc."></textarea>
+      </div>
+    </div>
+
+    <h3>3. Testing Methods (Rules of Engagement)</h3>
+    <div class="callout">
+      <strong>Default:</strong> Only <em>non-destructive</em> testing is authorized by this form.
+      Intrusive, disruptive, or exploit-based testing requires a separate written agreement.
+    </div>
+
+    <div class="check-row default">
+      <input type="checkbox" id="nonDestructive" checked />
+      <label for="nonDestructive">
+        <strong>Non-destructive testing (default — authorized).</strong>
+        Passive discovery, port/service enumeration, vulnerability scanning configured to avoid denial-of-service,
+        configuration review, and similar activities that are not intended to alter, delete, or disrupt production systems.
+      </label>
+    </div>
+
+    <div class="check-row optional">
+      <input type="checkbox" id="intrusive" />
+      <label for="intrusive">
+        <strong>Intrusive / disruptive testing (not authorized unless separately agreed in writing).</strong>
+        Exploitation of vulnerabilities, password spraying/brute force, denial-of-service testing, social engineering,
+        or any activity likely to modify data, interrupt service, or trigger security controls in a disruptive way.
+        Checking this box alone does <em>not</em> authorize intrusive work; a separate written addendum is required.
+      </label>
+    </div>
+
+    <div class="field" style="margin-top: 12px;">
+      <label for="specialInstructions">Special instructions / blackout windows / emergency contacts</label>
+      <textarea id="specialInstructions" placeholder="Maintenance windows to avoid, on-call contacts, notification requirements, etc."></textarea>
+    </div>
+
+    <h3>4. Authorization</h3>
+    <p>
+      Client hereby authorizes <span class="llc-name llc-sync">COTHE LLC</span> and its agents, employees, and
+      independent contractors to access and assess the in-scope systems solely for the purposes and duration stated
+      in this Agreement. Client represents that it owns or controls the in-scope assets, or has obtained all permissions
+      needed from third parties (including hosting providers, ISPs, and cloud vendors) for this assessment.
+    </p>
+    <p>
+      Client understands that assessment activity may generate security alerts, log noise, or temporary load on systems,
+      and that Client is responsible for notifying its own security team / MSSP as appropriate so authorized testing is
+      not treated as a hostile incident.
+    </p>
+
+    <h3>5. Limitation of Liability</h3>
+    <p>
+      To the fullest extent permitted by law, the total liability of <span class="llc-name llc-sync">COTHE LLC</span>,
+      its members, managers, agents, employees, and contractors arising out of or related to this engagement —
+      whether in contract, tort (including negligence), or otherwise — shall not exceed the fees actually paid by Client
+      to <span class="llc-name llc-sync">COTHE LLC</span> for this specific engagement. In no event shall
+      <span class="llc-name llc-sync">COTHE LLC</span> or its agents be liable for indirect, incidental, special,
+      consequential, exemplary, or punitive damages, or for lost profits, lost data, business interruption, or reputational
+      harm, even if advised of the possibility of such damages.
+    </p>
+
+    <h3>6. No Warranty of Completeness</h3>
+    <p>
+      Security assessments are point-in-time evaluations. <span class="llc-name llc-sync">COTHE LLC</span> does
+      <strong>not</strong> warrant or guarantee that every vulnerability, misconfiguration, or security issue will be
+      discovered, that systems will be free of risk after testing, or that future attacks will be prevented. Findings
+      reflect what was reasonably identifiable within the agreed scope, methods, and time window.
+    </p>
+
+    <h3>7. Client Authority &amp; Indemnification</h3>
+    <p>
+      Client represents and warrants that the person signing this Agreement has full authority to bind Client and to
+      authorize the assessment of all listed in-scope assets. Client agrees to indemnify, defend, and hold harmless
+      <span class="llc-name llc-sync">COTHE LLC</span> and its agents, employees, and contractors from and against
+      claims, damages, losses, and expenses (including reasonable attorneys’ fees) arising from: (a) testing of systems
+      Client was not authorized to include in scope; (b) Client’s misrepresentation of ownership, authority, or scope;
+      or (c) Client’s failure to notify stakeholders or obtain required third-party consents.
+    </p>
+
+    <h3>8. Work Product &amp; Use</h3>
+    <p>
+      Deliverables (reports, summaries, recommendations, and related work product) are prepared for Client’s
+      <strong>internal use</strong> in improving its security posture. Client may share them with its advisors, insurers,
+      or auditors under confidentiality, but may not republish them as a public endorsement or as certification that
+      systems are “secure.” <span class="llc-name llc-sync">COTHE LLC</span> retains ownership of its preexisting tools,
+      methods, and templates; Client receives a license to use the engagement-specific deliverables for its internal purposes.
+    </p>
+
+    <h3>9. Independent Contractor</h3>
+    <p>
+      <span class="llc-name llc-sync">COTHE LLC</span> is an independent contractor. Nothing in this Agreement creates
+      a partnership, joint venture, employment, or agency relationship that would make Client responsible for the
+      Service Provider’s employment taxes, benefits, or day-to-day supervision beyond the agreed scope and rules of engagement.
+      Personnel performing work remain under the direction of <span class="llc-name llc-sync">COTHE LLC</span>.
+    </p>
+
+    <h3>10. Governing Law &amp; Venue</h3>
+    <div class="grid-2">
+      <div class="field">
+        <label for="governingLaw">Governing law (state / jurisdiction)</label>
+        <input id="governingLaw" type="text" value="Ohio" />
+      </div>
+      <div class="field">
+        <label for="venue">Exclusive venue (county / state)</label>
+        <input id="venue" type="text" value="State or federal courts located in Ohio" />
+      </div>
+    </div>
+    <p>
+      This Agreement is governed by the laws of the jurisdiction named above, without regard to conflict-of-law rules.
+      The parties consent to exclusive venue in the courts described above for disputes arising from this Agreement,
+      except that either party may seek injunctive relief in any court of competent jurisdiction to protect confidential information.
+    </p>
+
+    <h3>11. Confidentiality</h3>
+    <p>
+      Each party will keep the other party’s non-public information confidential and use it only to perform or receive
+      the services. Assessment findings about Client systems are Client confidential information.
+      <span class="llc-name llc-sync">COTHE LLC</span> may retain anonymized methodology notes that do not identify Client.
+    </p>
+
+    <h3>12. Acknowledgment, E-Signature &amp; Identity Photo</h3>
+    <p>
+      By signing below, Client acknowledges that it has read this Agreement, understands that authorization runs to
+      <span class="llc-name llc-sync">COTHE LLC</span> and its agents/contractors, accepts the limitation of liability
+      and other protective terms, and authorizes non-destructive assessment of the in-scope assets. Intrusive testing,
+      if desired, requires a separate written agreement. Draw your signature (or use typed name as a fallback) and attach
+      a photo of the authorizing person for identity on this authorization.
+    </p>
+
+    <div class="sig-grid">
+      <div class="sig-block">
+        <h4>Client — authorizing person (e-signature)</h4>
+        <div class="field">
+          <label for="clientSigName">Typed legal name (printed)</label>
+          <input id="clientSigName" type="text" autocomplete="name" placeholder="Full legal name" />
+        </div>
+        <div class="field">
+          <label for="clientSigTitle">Title</label>
+          <input id="clientSigTitle" type="text" placeholder="e.g., Owner, IT Manager" />
+        </div>
+        <div class="field">
+          <label for="clientSigDate">Date</label>
+          <input id="clientSigDate" type="date" />
+        </div>
+
+        <p class="sig-meta">Draw signature (mouse or finger)</p>
+        <div class="sig-pad-wrap" id="sigPadWrap">
+          <canvas id="sigCanvas" width="640" height="200" aria-label="Signature pad"></canvas>
+          <div class="sig-pad-hint">Sign here</div>
+        </div>
+        <div class="sig-actions">
+          <button type="button" class="btn ghost" id="btnClearSig">Clear</button>
+          <button type="button" class="btn ghost" id="btnTypedSig">Use typed name</button>
+        </div>
+        <p class="sig-status" id="sigStatus" aria-live="polite"></p>
+      </div>
+
+      <div class="sig-block photo-block">
+        <h4>Photo of authorizing person</h4>
+        <label class="photo-label" for="authorizerPhoto">Identity photo for this authorization</label>
+        <p class="photo-help">
+          Take or upload a clear photo of the person requesting/authorizing this work.
+          On a phone, “Take photo” opens the front camera. Used only to identify the signer on this form.
+        </p>
+        <div class="photo-preview-box" id="photoPreviewBox">
+          <div class="placeholder" id="photoPlaceholder">No photo yet<br />Camera or file picker</div>
+          <img id="photoPreview" alt="Authorizing person photo preview" hidden />
+        </div>
+        <div class="photo-actions">
+          <input id="authorizerPhoto" type="file" accept="image/*" capture="user" />
+          <button type="button" class="btn primary" id="btnTakePhoto">Take photo / Choose image</button>
+          <button type="button" class="btn danger" id="btnClearPhoto" disabled>Remove photo</button>
+        </div>
+        <p class="sig-status" id="photoStatus" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <div class="sig-block" style="margin-top: 20px;">
+      <h4>Service Provider — <span class="llc-sync">COTHE LLC</span></h4>
+      <div class="grid-2">
+        <div class="field">
+          <label for="providerSigName">Printed name (authorized representative)</label>
+          <input id="providerSigName" type="text" placeholder="e.g., Martin Padilla" />
+        </div>
+        <div class="field">
+          <label for="providerSigTitle">Title</label>
+          <input id="providerSigTitle" type="text" placeholder="e.g., Member / Principal" />
+        </div>
+        <div class="field">
+          <label for="providerSigDate">Date</label>
+          <input id="providerSigDate" type="date" />
+        </div>
+      </div>
+      <p class="sig-meta">Signature (for <span class="llc-sync">COTHE LLC</span>) — wet-ink or separate e-sign if needed</p>
+      <div class="provider-sig-line"></div>
+    </div>
+
+    <div class="download-panel">
+      <h4>Save form answers (includes signature &amp; photo)</h4>
+      <p>
+        Downloads a JSON summary of all filled fields, the drawn signature as a PNG data URL,
+        and the authorizing-person photo as a compressed JPEG data URL.
+      </p>
+      <div class="btn-row">
+        <button type="button" class="btn primary" id="btnDownloadJson2">Download answers (JSON)</button>
+        <button type="button" class="btn ghost" onclick="window.print()">Print / Save PDF</button>
+      </div>
+    </div>
+
+    <p class="footer-note">
+      This form is a practical authorization and engagement agreement for network/security assessment work.
+      It is not a substitute for advice from a licensed attorney. Customize the LLC name, governing law, and scope
+      fields before use. Working business name historically associated with this practice: Padilla Web Design.
+      Legal authorizing entity on this form: <span class="llc-name llc-sync">COTHE LLC</span>.
+    </p>
+  </main>
+
+  <script>
+    (function () {
+      /* ---- LLC name sync ---- */
+      var llcInput = document.getElementById("llcLegalName");
+      var llcNodes = document.querySelectorAll(".llc-sync");
+      var title = document.querySelector("title");
+
+      function syncLlc() {
+        var name = (llcInput.value || "").trim() || "COTHE LLC";
+        llcNodes.forEach(function (el) { el.textContent = name; });
+        if (title) title.textContent = "Network Assessment Authorization Form — " + name;
+      }
+      llcInput.addEventListener("input", syncLlc);
+      llcInput.addEventListener("change", syncLlc);
+      syncLlc();
+
+      /* ---- Signature pad ---- */
+      var canvas = document.getElementById("sigCanvas");
+      var wrap = document.getElementById("sigPadWrap");
+      var ctx = canvas.getContext("2d");
+      var drawing = false;
+      var hasInk = false;
+      var lastX = 0;
+      var lastY = 0;
+      var sigStatus = document.getElementById("sigStatus");
+      var typedNameInput = document.getElementById("clientSigName");
+
+      function resizeCanvas() {
+        var ratio = window.devicePixelRatio || 1;
+        var rect = canvas.getBoundingClientRect();
+        var w = Math.max(1, Math.floor(rect.width));
+        var h = Math.max(1, Math.floor(rect.height));
+        var snapshot = hasInk ? canvas.toDataURL("image/png") : null;
+        canvas.width = Math.floor(w * ratio);
+        canvas.height = Math.floor(h * ratio);
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "#1a1f2e";
+        ctx.lineWidth = 2.25;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
+        if (snapshot) {
+          var img = new Image();
+          img.onload = function () {
+            ctx.drawImage(img, 0, 0, w, h);
+          };
+          img.src = snapshot;
+        }
+      }
+
+      function setHasInk(v) {
+        hasInk = v;
+        wrap.classList.toggle("has-ink", v);
+        sigStatus.textContent = v ? "Signature captured (PNG)." : "";
+      }
+
+      function posFromEvent(e) {
+        var rect = canvas.getBoundingClientRect();
+        var t = e.touches && e.touches[0] ? e.touches[0] : e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : e;
+        return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+      }
+
+      function startDraw(e) {
+        e.preventDefault();
+        drawing = true;
+        var p = posFromEvent(e);
+        lastX = p.x;
+        lastY = p.y;
+      }
+
+      function moveDraw(e) {
+        if (!drawing) return;
+        e.preventDefault();
+        var p = posFromEvent(e);
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        lastX = p.x;
+        lastY = p.y;
+        setHasInk(true);
+      }
+
+      function endDraw(e) {
+        if (!drawing) return;
+        e.preventDefault();
+        drawing = false;
+      }
+
+      canvas.addEventListener("mousedown", startDraw);
+      canvas.addEventListener("mousemove", moveDraw);
+      window.addEventListener("mouseup", endDraw);
+      canvas.addEventListener("mouseleave", endDraw);
+
+      canvas.addEventListener("touchstart", startDraw, { passive: false });
+      canvas.addEventListener("touchmove", moveDraw, { passive: false });
+      canvas.addEventListener("touchend", endDraw, { passive: false });
+      canvas.addEventListener("touchcancel", endDraw, { passive: false });
+
+      function clearSig() {
+        var rect = canvas.getBoundingClientRect();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        var ratio = window.devicePixelRatio || 1;
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, rect.width, rect.height);
+        setHasInk(false);
+        sigStatus.textContent = "Signature cleared.";
+      }
+
+      function useTypedName() {
+        var name = (typedNameInput.value || "").trim();
+        if (!name) {
+          sigStatus.textContent = "Enter a typed legal name first.";
+          typedNameInput.focus();
+          return;
+        }
+        clearSig();
+        var rect = canvas.getBoundingClientRect();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, rect.width, rect.height);
+        ctx.fillStyle = "#1a1f2e";
+        ctx.font = 'italic 28px "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive';
+        ctx.textBaseline = "middle";
+        var maxW = rect.width - 40;
+        var size = 28;
+        while (size > 16 && ctx.measureText(name).width > maxW) {
+          size -= 1;
+          ctx.font = "italic " + size + 'px "Segoe Script", "Bradley Hand", "Comic Sans MS", cursive';
+        }
+        ctx.fillText(name, 20, rect.height / 2);
+        setHasInk(true);
+        sigStatus.textContent = "Typed-name signature applied (PNG).";
+      }
+
+      document.getElementById("btnClearSig").addEventListener("click", clearSig);
+      document.getElementById("btnTypedSig").addEventListener("click", useTypedName);
+
+      window.addEventListener("resize", function () {
+        resizeCanvas();
+      });
+      resizeCanvas();
+
+      function getSignaturePngDataUrl() {
+        if (!hasInk) return null;
+        return canvas.toDataURL("image/png");
+      }
+
+      /* ---- Authorizer photo (camera + file) ---- */
+      var photoInput = document.getElementById("authorizerPhoto");
+      var photoPreview = document.getElementById("photoPreview");
+      var photoPlaceholder = document.getElementById("photoPlaceholder");
+      var photoPreviewBox = document.getElementById("photoPreviewBox");
+      var photoStatus = document.getElementById("photoStatus");
+      var btnClearPhoto = document.getElementById("btnClearPhoto");
+      var photoDataUrl = null;
+
+      document.getElementById("btnTakePhoto").addEventListener("click", function () {
+        photoInput.click();
+      });
+
+      function clearPhoto() {
+        photoDataUrl = null;
+        photoInput.value = "";
+        photoPreview.removeAttribute("src");
+        photoPreview.hidden = true;
+        photoPlaceholder.hidden = false;
+        photoPreviewBox.classList.remove("has-photo");
+        btnClearPhoto.disabled = true;
+        photoStatus.textContent = "Photo removed.";
+      }
+
+      btnClearPhoto.addEventListener("click", clearPhoto);
+
+      function compressImage(file, maxEdge, quality) {
+        return new Promise(function (resolve, reject) {
+          var reader = new FileReader();
+          reader.onerror = function () { reject(new Error("Could not read image.")); };
+          reader.onload = function () {
+            var img = new Image();
+            img.onerror = function () { reject(new Error("Could not decode image.")); };
+            img.onload = function () {
+              var w = img.naturalWidth || img.width;
+              var h = img.naturalHeight || img.height;
+              var scale = 1;
+              var longest = Math.max(w, h);
+              if (longest > maxEdge) scale = maxEdge / longest;
+              var tw = Math.max(1, Math.round(w * scale));
+              var th = Math.max(1, Math.round(h * scale));
+              var c = document.createElement("canvas");
+              c.width = tw;
+              c.height = th;
+              var cctx = c.getContext("2d");
+              cctx.fillStyle = "#ffffff";
+              cctx.fillRect(0, 0, tw, th);
+              cctx.drawImage(img, 0, 0, tw, th);
+              var outType = "image/jpeg";
+              var dataUrl = c.toDataURL(outType, quality);
+              resolve({
+                dataUrl: dataUrl,
+                width: tw,
+                height: th,
+                mime: outType,
+                approxBytes: Math.round((dataUrl.length * 3) / 4)
+              });
+            };
+            img.src = reader.result;
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      photoInput.addEventListener("change", function () {
+        var file = photoInput.files && photoInput.files[0];
+        if (!file) return;
+        if (!file.type || file.type.indexOf("image/") !== 0) {
+          photoStatus.textContent = "Please choose an image file.";
+          return;
+        }
+        photoStatus.textContent = "Compressing photo…";
+        compressImage(file, 1024, 0.82)
+          .then(function (result) {
+            photoDataUrl = result.dataUrl;
+            photoPreview.src = result.dataUrl;
+            photoPreview.hidden = false;
+            photoPlaceholder.hidden = true;
+            photoPreviewBox.classList.add("has-photo");
+            btnClearPhoto.disabled = false;
+            var kb = Math.round(result.approxBytes / 1024);
+            photoStatus.textContent =
+              "Photo ready (" + result.width + "×" + result.height + ", ~" + kb + " KB JPEG).";
+          })
+          .catch(function (err) {
+            photoStatus.textContent = err.message || "Photo failed.";
+          });
+      });
+
+      /* ---- Collect & download ---- */
+      function val(id) {
+        var el = document.getElementById(id);
+        return el ? (el.value || "").trim() : "";
+      }
+
+      function collectAnswers() {
+        var sig = getSignaturePngDataUrl();
+        return {
+          generatedAt: new Date().toISOString(),
+          serviceProviderLlc: val("llcLegalName") || "COTHE LLC",
+          client: {
+            organization: val("clientOrg"),
+            contact: val("clientContact"),
+            email: val("clientEmail"),
+            phone: val("clientPhone"),
+            address: val("clientAddress")
+          },
+          engagement: {
+            startDate: val("engageStart"),
+            endDate: val("engageEnd"),
+            targets: val("targets"),
+            outOfScope: val("outOfScope"),
+            objectives: val("objectives"),
+            specialInstructions: val("specialInstructions"),
+            nonDestructiveDefault: !!(document.getElementById("nonDestructive") && document.getElementById("nonDestructive").checked),
+            intrusiveRequestedCheckbox: !!(document.getElementById("intrusive") && document.getElementById("intrusive").checked),
+            note: "Intrusive testing still requires a separate written agreement."
+          },
+          terms: {
+            governingLaw: val("governingLaw"),
+            venue: val("venue"),
+            liabilityCap: "Fees actually paid for this engagement",
+            independentContractor: true,
+            workProductInternalUse: true
+          },
+          authorizingPerson: {
+            typedLegalName: val("clientSigName"),
+            title: val("clientSigTitle"),
+            date: val("clientSigDate"),
+            signaturePngDataUrl: sig,
+            signaturePresent: !!sig,
+            identityPhotoJpegDataUrl: photoDataUrl,
+            identityPhotoPresent: !!photoDataUrl,
+            identityPhotoLabel: "Photo of the authorizing person for identity on the authorization"
+          },
+          serviceProviderRep: {
+            printedName: val("providerSigName"),
+            title: val("providerSigTitle"),
+            date: val("providerSigDate"),
+            company: val("llcLegalName") || "COTHE LLC"
+          }
+        };
+      }
+
+      function downloadAnswers() {
+        var data = collectAnswers();
+        var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+        var a = document.createElement("a");
+        var stamp = new Date().toISOString().slice(0, 10);
+        a.href = URL.createObjectURL(blob);
+        a.download = "cothe-llc-authorization-" + stamp + ".json";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+          URL.revokeObjectURL(a.href);
+          a.remove();
+        }, 0);
+        sigStatus.textContent = data.authorizingPerson.signaturePresent
+          ? "Downloaded — signature PNG included."
+          : "Downloaded — no signature drawn yet.";
+        if (data.authorizingPerson.identityPhotoPresent) {
+          photoStatus.textContent = "Downloaded — identity photo JPEG included.";
+        }
+      }
+
+      document.getElementById("btnDownloadJson").addEventListener("click", downloadAnswers);
+      document.getElementById("btnDownloadJson2").addEventListener("click", downloadAnswers);
+
+      /* default today's date for client sig */
+      var dateEl = document.getElementById("clientSigDate");
+      if (dateEl && !dateEl.value) {
+        dateEl.value = new Date().toISOString().slice(0, 10);
+      }
+    })();
+  </script>
+</body>
+</html>
