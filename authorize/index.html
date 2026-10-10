@@ -1156,9 +1156,10 @@
             { name: "Sales rep", value: clip(d.quote && d.quote.salesRep ? d.quote.salesRep : "— (no quote / self-serve)", 200), inline: true },
             { name: "Quote (estimate)", value: clip(quoteText(d.quote), 1000) },
             { name: "Signed by", value: clip(a.typedLegalName + (a.title ? ", " + a.title : "") + " — " + (a.date || "no date"), 1000) },
-            { name: "Attachments", value: "E-signature: " + (a.signaturePresent ? "✅ captured" : "❌ none") + "\nID photo: " + (a.identityPhotoPresent ? "✅ captured" : "❌ none") }
+            { name: "Attachments", value: "E-signature: " + (a.signaturePresent ? "✅ captured" : "❌ none") + "\nID photo: " + (a.identityPhotoPresent ? "✅ captured" : "❌ none") },
+            { name: "▶️ To run the assessment", value: "Reply **run test** to this message to start. Your Discord name is logged as accountable." }
           ],
-          footer: { text: d.serviceProviderLlc + " intake form" }
+          footer: { text: d.serviceProviderLlc + " intake form · To run: reply `run test` (your Discord name is recorded)" }
         };
         var embeds = [embed], fd = new FormData(), n = 0;
         if (a.signaturePngDataUrl) { fd.append("files[" + n + "]", dataUrlToBlob(a.signaturePngDataUrl), "signature.png"); n++; embed.image = { url: "attachment://signature.png" }; }
