@@ -3,35 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Build an estimate for COTHE LLC network security assessments, re-tests, remediation help, and monitoring." />
-  <title>Quote Builder — COTHE LLC</title>
+  <meta name="description" content="COTHE LLC sales team login." /><meta name="robots" content="noindex" />
+  <title>Sales login — COTHE LLC</title>
   <link rel="stylesheet" href="../css/styles.css" />
-  <style>
-    .q-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:1.5rem;align-items:start}
-    .q-panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:1.25rem;box-shadow:var(--shadow)}
-    .q-panel h3{margin:0 0 .75rem;font-size:1.05rem;color:var(--accent)}
-    .q-panel+.q-panel{margin-top:1rem}
-    .q-row{display:flex;justify-content:space-between;align-items:center;gap:.75rem;padding:.55rem 0;border-bottom:1px dashed var(--line)}
-    .q-row:last-child{border-bottom:0}
-    .q-row label{flex:1;cursor:pointer}
-    .q-row small{display:block;color:var(--muted)}
-    .q-price{font-weight:700;white-space:nowrap}
-    .q-row input[type=number]{width:4.5rem;padding:.35rem;border:1px solid var(--line);border-radius:8px;font:inherit}
-    .q-field{display:flex;flex-direction:column;gap:.3rem;margin-bottom:.75rem}
-    .q-field select,.q-field input{padding:.55rem;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
-    .q-toggle{display:flex;gap:.5rem;flex-wrap:wrap}
-    .q-toggle label{border:1px solid var(--line);border-radius:999px;padding:.35rem .9rem;cursor:pointer}
-    .q-toggle input{margin-right:.3rem}
-    .q-summary{position:sticky;top:90px}
-    .q-sum{width:100%;border-collapse:collapse;font-size:.95rem}
-    .q-sum td{padding:.35rem 0;border-bottom:1px solid var(--line)}
-    .q-sum td:last-child{text-align:right;white-space:nowrap}
-    .q-sum tr.total td{font-weight:800;font-size:1.1rem;color:var(--accent);border-bottom:2px solid var(--accent)}
-    .q-sum tr.sub td{color:var(--muted)}
-    .q-taxnote{font-size:.85rem;color:var(--muted);background:var(--accent-soft);border-radius:10px;padding:.6rem .75rem;margin-top:.75rem}
-    .q-tag{font-size:.7rem;font-weight:700;padding:.1rem .4rem;border-radius:6px;background:var(--gold-soft);color:var(--gold);margin-left:.3rem}
-    @media (max-width:900px){.q-grid{grid-template-columns:1fr}.q-summary{position:static}}
-  </style>
+  <style>.q-panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:1.25rem;box-shadow:var(--shadow);margin:2rem 0}.q-field{display:flex;flex-direction:column;gap:.3rem;margin-bottom:.75rem}.q-field input{padding:.55rem;border:1px solid var(--line);border-radius:8px;font:inherit}.q-field input[type=checkbox]{display:inline;width:auto}</style>
 </head>
 <body>
   <header class="site-header">
@@ -42,7 +17,7 @@
       </a>
       <ul class="nav-links">
         <li><a href="../#services">Services</a></li>
-        <li><a href="./">Quote</a></li>
+        <li><a href="./">Sales login</a></li>
         <li><a href="../#faq">FAQ</a></li>
         <li><a href="../#contact">Contact</a></li>
         <li><a class="btn btn-primary" href="../authorize/">Authorize testing</a></li>
@@ -50,70 +25,23 @@
     </div>
   </header>
 
-  <main>
+  <main id="app">
     <section>
-      <div class="container">
-        <div class="section-head">
-          <h2>Quote builder</h2>
-          <p>Pick a service, add what you need, and choose your state for an estimated tax. Your quote can be carried into the authorization form.</p>
-        </div>
-        <div class="q-grid">
-          <div>
-            <div class="q-panel">
-              <h3>1. Base assessment</h3>
-              <div id="tiers"></div>
-            </div>
-            <div class="q-panel">
-              <h3>2. Add-ons</h3>
-              <div id="addons"></div>
-            </div>
-            <div class="q-panel">
-              <h3>3. Monthly monitoring <small class="muted">(recurring, billed separately)</small></h3>
-              <div id="monitoring"></div>
-            </div>
-            <div class="q-panel">
-              <h3>4. Location, use &amp; discount</h3>
-              <div class="q-field">
-                <label for="state">Your state</label>
-                <select id="state"></select>
-              </div>
-              <div class="q-field">
-                <span>Purchased for</span>
-                <div class="q-toggle">
-                  <label><input type="radio" name="use" value="personal" checked />Personal / home use</label>
-                  <label><input type="radio" name="use" value="business" />Business use</label>
-                </div>
-              </div>
-              <div class="q-field">
-                <label for="localRate">Optional local / county rate % <small class="muted">(e.g., Ohio county + transit rate)</small></label>
-                <input id="localRate" type="number" min="0" max="10" step="0.001" value="0" inputmode="decimal" />
-              </div>
-              <div class="q-row" style="border:0">
-                <label><input type="checkbox" id="discount" /> Veteran / first responder discount <small>10% off one-time services</small></label>
-              </div>
-            </div>
-          </div>
-
-          <aside class="q-panel q-summary" aria-live="polite">
-            <h3>Estimate</h3>
-            <div id="lines"></div>
-            <table class="q-sum" id="sum"></table>
-            <div class="q-taxnote" id="taxnote"></div>
-            <div class="btn-row">
-              <a class="btn btn-primary" id="toAuth" href="../authorize/">Continue to authorization</a>
-              <button class="btn btn-secondary" id="copyQ" type="button">Copy quote</button>
-            </div>
-            <p class="legal-note" style="margin-top:1rem">
-              <strong>Estimates only.</strong> Final pricing and tax are confirmed on the invoice. Tax treatment of
-              IT and security services varies by state, locality, and how the service is used; COTHE LLC is not
-              providing tax advice. Local/county taxes may apply in addition to the state rate shown.
-            </p>
-          </aside>
+      <div class="container" style="max-width:440px">
+        <div class="q-panel" id="loginBox">
+          <h2 style="margin-top:0">Sales team login</h2>
+          <p class="muted">The quote builder is for the COTHE LLC sales team. Customers: please <a href="../#contact">contact us for a quote</a>.</p>
+          <form id="loginForm" autocomplete="on">
+            <div class="q-field"><label for="u">Username</label><input id="u" name="username" autocomplete="username" required /></div>
+            <div class="q-field"><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required /></div>
+            <div class="q-field"><label><input type="checkbox" id="remember" /> Remember me (this browser tab session only)</label></div>
+            <button class="btn btn-primary" id="loginBtn" type="submit">Unlock quote builder</button>
+            <p id="err" role="alert" style="color:#b91c1c;font-weight:600;min-height:1.2em"></p>
+          </form>
         </div>
       </div>
     </section>
   </main>
-
   <footer class="site-footer">
     <div class="container footer-row">
       <span>© <span id="yr"></span> COTHE LLC</span>
@@ -121,7 +49,40 @@
     </div>
   </footer>
 
-  <script src="tax-data.js"></script>
-  <script src="quote.js"></script>
+  <script>
+(function(){
+  var SK="cothe_sales_key", blob=null;
+  var b64=function(s){return Uint8Array.from(atob(s),function(c){return c.charCodeAt(0)})};
+  function getBlob(){ if(blob) return Promise.resolve(blob);
+    return fetch("quote.enc.json",{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("load");return r.json()}).then(function(j){return blob=j}); }
+  function derive(pw,b){ var e=new TextEncoder();
+    return crypto.subtle.importKey("raw",e.encode("sales:"+pw),"PBKDF2",false,["deriveKey"]).then(function(k){
+      return crypto.subtle.deriveKey({name:"PBKDF2",hash:"SHA-256",salt:b64(b.salt),iterations:b.iter},k,{name:"AES-GCM",length:256},true,["decrypt"]);});}
+  function decrypt(key,b){ return crypto.subtle.decrypt({name:"AES-GCM",iv:b64(b.iv)},key,b64(b.ct)).then(function(pt){return JSON.parse(new TextDecoder().decode(pt))}); }
+  function run(p){
+    var st=document.createElement("style"); st.textContent=p.css; document.head.appendChild(st);
+    var app=document.getElementById("app"); app.innerHTML=p.html;
+    var bar=document.createElement("div"); bar.className="container"; bar.style.cssText="display:flex;justify-content:flex-end;padding-top:1rem";
+    bar.innerHTML='<button class="btn btn-secondary" id="logout" type="button">Log out</button>'; app.insertBefore(bar,app.firstChild);
+    document.getElementById("logout").onclick=function(){ try{sessionStorage.removeItem(SK)}catch(e){} location.reload(); };
+    p.js.forEach(function(code){ var s=document.createElement("script"); s.textContent=code; document.body.appendChild(s); });
+    document.documentElement.setAttribute("data-unlocked","1");
+  }
+  var err=document.getElementById("err"), btn=document.getElementById("loginBtn");
+  document.getElementById("loginForm").addEventListener("submit",function(ev){
+    ev.preventDefault(); err.textContent=""; btn.disabled=true; btn.textContent="Unlocking…";
+    var u=document.getElementById("u").value.trim().toLowerCase(), pw=document.getElementById("p").value, rem=document.getElementById("remember").checked;
+    var fail=function(){ err.textContent="Incorrect username or password."; btn.disabled=false; btn.textContent="Unlock quote builder"; };
+    if(u!=="sales"){ setTimeout(fail,400); return; }
+    getBlob().then(function(b){ return derive(pw,b).then(function(key){ return decrypt(key,b).then(function(p){
+      if(rem){ return crypto.subtle.exportKey("raw",key).then(function(raw){ try{sessionStorage.setItem(SK,btoa(String.fromCharCode.apply(null,new Uint8Array(raw))))}catch(e){} return p; }); }
+      return p; }); }); }).then(run).catch(fail);
+  });
+  try{ var saved=sessionStorage.getItem(SK); if(saved){ getBlob().then(function(b){
+      return crypto.subtle.importKey("raw",b64(saved),{name:"AES-GCM"},false,["decrypt"]).then(function(k){return decrypt(k,b)}); })
+    .then(run).catch(function(){ sessionStorage.removeItem(SK); }); } }catch(e){}
+  document.getElementById("yr").textContent=new Date().getFullYear();
+})();
+</script>
 </body>
 </html>
