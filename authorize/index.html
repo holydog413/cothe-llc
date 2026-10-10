@@ -354,6 +354,9 @@
       gap: 8px;
     }
 
+    .phone-handoff { margin-top: 10px; }
+    .phone-code { font: 700 2.2rem/1.2 ui-monospace, monospace; letter-spacing: .25em; margin: 6px 0; }
+    .phone-qr img, .phone-qr svg { width: 200px; height: 200px; background:#fff; padding:6px; }
     .photo-actions .btn { width: 100%; text-align: center; }
 
     .photo-actions input[type="file"] {
@@ -712,6 +715,16 @@
           <button type="button" class="btn danger" id="btnClearPhoto" disabled>Remove photo</button>
         </div>
         <p class="sig-status" id="photoStatus" aria-live="polite"></p>
+        <div id="phoneHandoff" class="phone-handoff">
+          <button type="button" class="btn ghost" id="btnUsePhone">📱 Use my phone's camera</button>
+          <div id="phonePanel" hidden>
+            <p class="photo-help">Scan this QR code with your phone, take the photo, and tap <strong>Send photo</strong>. Your request code:</p>
+            <div id="phoneCode" class="phone-code"></div>
+            <div id="phoneQr" class="phone-qr"></div>
+            <p class="photo-help">Or open this link on your phone:<br /><input id="phoneLink" type="text" readonly style="width:100%" /> <button type="button" class="btn ghost" id="btnCopyPhoneLink">Copy link</button></p>
+            <label><input type="checkbox" id="phoneSentChk" /> I sent the photo from my phone</label>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -757,6 +770,7 @@
   </main>
 
   <script src="intake-config.js"></script>
+  <script src="../assets/vendor/qrcode.js"></script>
   <script>
     (function () {
       /* ---- LLC name sync ---- */
@@ -932,6 +946,35 @@
 
       btnClearPhoto.addEventListener("click", clearPhoto);
 
+      /* ---- Phone camera handoff (desktop only) ---- */
+      var phoneCode = null;
+      var phoneSentChk = document.getElementById("phoneSentChk");
+      var isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+      if (isMobile) document.getElementById("phoneHandoff").hidden = true;
+      function newPhoneCode() {
+        var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", out = "", rnd = new Uint8Array(6);
+        crypto.getRandomValues(rnd);
+        for (var i = 0; i < 6; i++) out += chars[rnd[i] % chars.length];
+        return out;
+      }
+      document.getElementById("btnUsePhone").addEventListener("click", function () {
+        if (!phoneCode) phoneCode = newPhoneCode();
+        var url = new URL("photo/?code=" + phoneCode, location.href).href;
+        document.getElementById("phoneCode").textContent = phoneCode;
+        document.getElementById("phoneLink").value = url;
+        var qr = qrcode(0, "M"); qr.addData(url); qr.make();
+        document.getElementById("phoneQr").innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+        document.getElementById("phonePanel").hidden = false;
+      });
+      document.getElementById("btnCopyPhoneLink").addEventListener("click", function () {
+        var el = document.getElementById("phoneLink"); el.select();
+        (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).catch(function () { document.execCommand("copy"); });
+      });
+      phoneSentChk.addEventListener("change", function () {
+        photoStatus.textContent = phoneSentChk.checked ? "Photo: sent from phone, code " + phoneCode : "";
+      });
+      function phoneSent() { return !!(phoneCode && phoneSentChk.checked); }
+
       function compressImage(file, maxEdge, quality) {
         return new Promise(function (resolve, reject) {
           var reader = new FileReader();
@@ -1065,6 +1108,8 @@
             signaturePresent: !!sig,
             identityPhotoJpegDataUrl: photoDataUrl,
             identityPhotoPresent: !!photoDataUrl,
+            photo_code: phoneSent() ? phoneCode : null,
+            identityPhotoSource: photoDataUrl ? "direct" : (phoneSent() ? "phone" : "none"),
             identityPhotoLabel: "Photo of the authorizing person for identity on the authorization"
           },
           quote: storedQuote(),
@@ -1157,7 +1202,8 @@
             { name: "Sales rep", value: clip(d.quote && d.quote.salesRep ? d.quote.salesRep : "— (no quote / self-serve)", 200), inline: true },
             { name: "Quote (estimate)", value: clip(quoteText(d.quote), 1000) },
             { name: "Signed by", value: clip(a.typedLegalName + (a.title ? ", " + a.title : "") + " — " + (a.date || "no date"), 1000) },
-            { name: "Attachments", value: "E-signature: " + (a.signaturePresent ? "✅ captured" : "❌ none") + "\nID photo: " + (a.identityPhotoPresent ? "✅ captured" : "❌ none") },
+            { name: "Attachments", value: "E-signature: " + (a.signaturePresent ? "✅ captured" : "❌ none") + "\nID photo: " + (a.identityPhotoPresent ? "✅ captured" : (a.photo_code ? "📱 Photo: sent from phone, code " + a.photo_code : "❌ none")) },
+            { name: "📷 Photo code", value: a.photo_code ? "`" + a.photo_code + "`" : "—", inline: true },
             { name: "▶️ To run the assessment", value: "Reply **run test** to this message to start. Your Discord name is logged as accountable." }
           ],
           footer: { text: d.serviceProviderLlc + " intake form · To run: reply `run test` (your Discord name is recorded)" }

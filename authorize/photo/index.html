@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>COTHE — Send ID photo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; max-width: 520px; margin: auto; color: #111; }
+    h1 { font-size: 1.3rem; }
+    .code { font: 700 2.4rem ui-monospace, monospace; letter-spacing: .25em; text-align: center; padding: 10px; border: 2px dashed #2563eb; border-radius: 10px; }
+    .btn { display: block; width: 100%; font-size: 1.3rem; padding: 18px; margin: 14px 0; border-radius: 12px; border: 0; background: #2563eb; color: #fff; }
+    .btn.secondary { background: #e5e7eb; color: #111; }
+    .btn:disabled { opacity: .5; }
+    img { width: 100%; border-radius: 10px; margin-top: 10px; }
+    #status { font-size: 1.1rem; min-height: 1.5em; }
+    .ok { color: #15803d; font-weight: 700; }
+    .err { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1>COTHE — ID photo for your authorization</h1>
+  <p>Request code (should match the one on your computer):</p>
+  <div class="code" id="code">—</div>
+  <input id="cam" type="file" accept="image/*" capture="user" hidden />
+  <button class="btn" id="btnTake" type="button">📷 Take photo</button>
+  <img id="preview" alt="Photo preview" hidden />
+  <button class="btn" id="btnSend" type="button" disabled>Send photo</button>
+  <p id="status" aria-live="polite"></p>
+
+  <script src="../intake-config.js"></script>
+  <script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var code = (params.get("code") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    var status = document.getElementById("status"), btnSend = document.getElementById("btnSend");
+    var cam = document.getElementById("cam"), preview = document.getElementById("preview");
+    var blob = null, sending = false;
+    document.getElementById("code").textContent = code || "—";
+    if (code.length !== 6) { status.innerHTML = '<span class="err">Missing or invalid request code. Re-scan the QR code on your computer.</span>'; document.getElementById("btnTake").disabled = true; }
+
+    function compress(file, maxEdge, q) {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(file), img = new Image();
+        img.onerror = function () { reject(new Error("Could not read image")); };
+        img.onload = function () {
+          var w = img.naturalWidth, h = img.naturalHeight, s = Math.min(1, maxEdge / Math.max(w, h));
+          var c = document.createElement("canvas"); c.width = Math.round(w * s); c.height = Math.round(h * s);
+          var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          c.toBlob(function (b) { b ? resolve(b) : reject(new Error("Compress failed")); }, "image/jpeg", q);
+        };
+        img.src = url;
+      });
+    }
+
+    document.getElementById("btnTake").addEventListener("click", function () { cam.click(); });
+    cam.addEventListener("change", function () {
+      var f = cam.files && cam.files[0]; if (!f) return;
+      status.textContent = "Preparing photo…";
+      compress(f, 1200, 0.85).then(function (b) {
+        blob = b; preview.src = URL.createObjectURL(b); preview.hidden = false;
+        btnSend.disabled = false; status.textContent = "Looks good? Tap Send photo (" + Math.round(b.size / 1024) + " KB).";
+      }).catch(function (e) { status.innerHTML = '<span class="err">' + e.message + "</span>"; });
+    });
+
+    btnSend.addEventListener("click", function () {
+      var hook = (window.COTHE_INTAKE_WEBHOOK || "").trim();
+      if (!blob || sending || code.length !== 6) return;
+      if (!hook) { status.innerHTML = '<span class="err">Online submission is not configured.</span>'; return; }
+      sending = true; btnSend.disabled = true; status.textContent = "Sending…";
+      var fd = new FormData();
+      fd.append("files[0]", blob, "id-photo-" + code + ".jpg");
+      fd.append("payload_json", JSON.stringify({ username: "COTHE Intake", content: "📷 ID photo for request code " + code, allowed_mentions: { parse: [] } }));
+      fetch(hook, { method: "POST", body: fd }).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        status.innerHTML = '<span class="ok">✅ Photo sent! Back on your computer, tick “I sent the photo from my phone” and submit the form.</span>';
+        document.getElementById("btnTake").disabled = true;
+      }).catch(function (e) {
+        sending = false; btnSend.disabled = false;
+        status.innerHTML = '<span class="err">Send failed (' + e.message + "). Try again.</span>";
+      });
+    });
+  })();
+  </script>
+</body>
+</html>

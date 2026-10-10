@@ -17,7 +17,7 @@ Safety:
     A bare `run test` with no linked authorization is IGNORED (never scans a
     free-form IP).
   * The authorization message must carry an answers.json attachment with
-    signature + ID photo captured and a valid public client IP (enforced by
+    signature + ID photo captured (or photo_code matched to a phone photo msg) and a valid public client IP (enforced by
     cothe_run_test.validate_authorization).
   * One run per authorization message id (seen file in cothe_run_test).
 
@@ -142,6 +142,10 @@ def process():
                 print("[skip] auth %s has no answers.json" % auth["id"], file=sys.stderr)
                 continue
             info = core.extract_from_answers(apath)
+            if not info.get("photo") and info.get("photo_code"):
+                chan_msgs = msgs if core.photo_code_in_messages(info["photo_code"], msgs) \
+                    else core.fetch_channel_messages()
+                info = core.resolve_photo(info, chan_msgs)
             ok, missing = core.validate_authorization(info)
             if not ok:
                 reason = "; ".join(missing)

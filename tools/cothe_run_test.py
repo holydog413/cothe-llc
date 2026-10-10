@@ -13,7 +13,9 @@ Safety (enforced here):
     abuse, NO -A aggressive, NO NSE "intrusive"/"exploit"/"dos"/"brute" categories.
   * Requires a valid public client IP. Refuses private / reserved / loopback ranges.
   * When run from an authorization (--answers answers.json) it REQUIRES:
-      signed-by name, e-signature captured, ID photo captured, and a valid client IP.
+      signed-by name, e-signature captured, ID photo captured (or a photo_code matching a
+      '📷 ID photo for request code' image message in the intake channel; needs
+      COTHE_DISCORD_BOT_TOKEN), and a valid client IP.
     If any are missing it posts WHY it won't run and exits non-zero.
   * One run per authorization message id: tracked in a seen file. A second attempt
     on the same auth id is refused.
@@ -231,6 +233,68 @@ def build_report(scan, operator, company, signed_by, auth_id):
     return "\n".join(lines)
 
 
+PHOTO_MSG_RE = re.compile(r"📷\s*ID photo for request code\s+([A-Z0-9]{6})\b")
+IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".heic")
+
+
+def photo_code_in_messages(code, messages):
+    """True if a '📷 ID photo for request code CODE' message with an image attachment exists."""
+    code = (code or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{6}", code):
+        return False
+    for m in messages or []:
+        mm = PHOTO_MSG_RE.search(m.get("content") or "")
+        if not mm or mm.group(1) != code:
+            continue
+        for a in m.get("attachments", []):
+            ct = (a.get("content_type") or "").lower()
+            fn = (a.get("filename") or "").lower()
+            if ct.startswith("image/") or fn.endswith(IMAGE_EXT):
+                return True
+    return False
+
+
+def fetch_channel_messages(pages=4):
+    """Fetch recent intake-channel messages with the bot token (never printed). [] if no token."""
+    token = os.environ.get("COTHE_DISCORD_BOT_TOKEN", "").strip()
+    if not token:
+        return []
+    chan = os.environ.get("COTHE_CHANNEL_ID", "1558462561454657566")
+    out, before = [], None
+    for _ in range(pages):
+        url = "https://discord.com/api/v10/channels/%s/messages?limit=100" % chan
+        if before:
+            url += "&before=" + before
+        req = urllib.request.Request(url, headers={
+            "Authorization": "Bot " + token,
+            "User-Agent": "cothe-run-test (https://holydog413.github.io/cothe-llc, 1.0)"})
+        try:
+            batch = json.load(urllib.request.urlopen(req, timeout=30))
+        except Exception as e:
+            print("[warn] could not read intake channel for photo code: %s" % type(e).__name__, file=sys.stderr)
+            break
+        out.extend(batch)
+        if len(batch) < 100:
+            break
+        before = batch[-1]["id"]
+    return out
+
+
+def resolve_photo(info, messages=None):
+    """Mark info['photo'] True if a phone photo_code is verified in the channel."""
+    if info.get("photo") or not info.get("photo_code"):
+        return info
+    if messages is None:
+        messages = fetch_channel_messages()
+    if photo_code_in_messages(info["photo_code"], messages):
+        info["photo"] = True
+        info["photo_via"] = "phone code %s" % info["photo_code"]
+    else:
+        info["photo_missing_reason"] = ("ID photo not captured and no phone photo found for code %s"
+                                        % info["photo_code"])
+    return info
+
+
 def extract_from_answers(path):
     d = json.load(open(path))
     a = d.get("authorizingPerson", {})
@@ -242,6 +306,7 @@ def extract_from_answers(path):
         "signed_by": a.get("typedLegalName", ""),
         "sig": bool(a.get("signaturePresent")),
         "photo": bool(a.get("identityPhotoPresent")),
+        "photo_code": (a.get("photo_code") or "").strip().upper(),
     }
 
 
@@ -253,7 +318,7 @@ def validate_authorization(info):
     if not info.get("sig"):
         missing.append("e-signature was not captured")
     if not info.get("photo"):
-        missing.append("ID photo was not captured")
+        missing.append(info.get("photo_missing_reason") or "ID photo was not captured")
     if not is_public_ip(info.get("ip", "")):
         missing.append("a valid public client IP is missing/invalid")
     return (len(missing) == 0, missing)
@@ -273,7 +338,7 @@ def main():
     args = ap.parse_args()
 
     if args.answers:
-        info = extract_from_answers(args.answers)
+        info = resolve_photo(extract_from_answers(args.answers))
     else:
         if not args.ip:
             ap.error("provide --answers or --ip")
