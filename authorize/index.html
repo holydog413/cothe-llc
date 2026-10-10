@@ -692,6 +692,7 @@
           <button type="button" class="btn ghost" id="btnTypedSig">Use typed name</button>
         </div>
         <p class="sig-status" id="sigStatus" aria-live="polite"></p>
+        <p><a href="../setup/">Next: what to install &rarr;</a></p>
       </div>
 
       <div class="sig-block photo-block">
@@ -1175,7 +1176,7 @@
         sigStatus.textContent = "Submitting…";
         fetch(hook, { method: "POST", body: fd }).then(function (r) {
           if (!r.ok) throw new Error("HTTP " + r.status);
-          sigStatus.textContent = "Submitted to COTHE. Thank you — we'll be in touch.";
+          sigStatus.innerHTML = "Submitted to COTHE. Thank you — we'll be in touch. <a href=\"../setup/\"><strong>Next: what to install &rarr;</strong></a>";
           alert("Submitted to COTHE. Thank you!");
         }).catch(function (err) {
           sigStatus.textContent = "Submit failed (" + err.message + "). Please use Download answers and email the file.";

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>COTHE LLC — What to install (client setup)</title>
+  <link rel="stylesheet" href="../css/styles.css" />
+  <style>
+    .setup{max-width:780px;margin:2rem auto;padding:0 1rem;line-height:1.6}
+    .setup .card{border:1px solid #d1d5db;border-radius:12px;padding:1.25rem 1.5rem;margin:1.25rem 0;background:#fff}
+    .setup h2{margin-top:0}.dl a{display:inline-block;margin:.25rem .5rem .25rem 0;padding:.5rem .9rem;border-radius:8px;background:#1e3a8a;color:#fff;text-decoration:none}
+    .setup pre{white-space:pre-wrap;background:#f3f4f6;padding:1rem;border-radius:8px;font-size:.9rem}
+    .ph{background:#fef3c7;padding:0 .3rem;border-radius:4px}
+  </style>
+</head>
+<body>
+  <header class="site-header"><div class="container nav"><a class="brand" href="../"><div class="brand-mark">CTL</div><div>COTHE LLC<span>Network security assessments</span></div></a></div></header>
+  <main class="setup">
+    <h1>Next: what to install</h1>
+    <p>Thanks for authorizing your assessment. Here's what you need to do — it depends on which check you chose.</p>
+
+    <section class="card" id="remote">
+      <h2>1. Remote (outside-only) check</h2>
+      <p><strong>Nothing to install.</strong> While you are at the location being checked (on its Wi-Fi or wired network), open the authorization form and tap <strong>Use my IP</strong>. That fills in your internet address so we can check what the outside world can see.</p>
+    </section>
+
+    <section class="card" id="full">
+      <h2>2. Full home / business check</h2>
+      <p>For a look inside your network, we use <strong>Tailscale</strong> — a secure, free (personal plan) connection you control and can turn off any time.</p>
+      <ol>
+        <li><strong>Create a free Tailscale account</strong> at <a href="https://tailscale.com/download">tailscale.com</a> (sign in with Google, Microsoft, or Apple).</li>
+        <li><strong>Install Tailscale</strong> on a computer that stays at the location:
+          <div class="dl">
+            <a href="https://tailscale.com/download/windows">Windows</a>
+            <a href="https://tailscale.com/download/mac">Mac</a>
+            <a href="https://tailscale.com/download/ios">iPhone / iPad</a>
+            <a href="https://tailscale.com/download/android">Android</a>
+          </div>
+          <small>Other systems: <a href="https://tailscale.com/download">tailscale.com/download</a></small>
+        </li>
+        <li><strong>Sign in</strong> to the app with the account you just made, and leave it connected.</li>
+        <li><strong>Share the device with COTHE.</strong> In the Tailscale admin page, open <em>Machines</em> → the “…” menu on your device → <em>Share</em>, and enter COTHE's Tailscale email: <span class="ph">[COTHE Tailscale email — coming soon]</span>.<br>
+          <em>Don't have it yet? No problem — we'll send you our Tailscale invite after payment.</em></li>
+        <li>When the assessment is done, you can remove the share (or uninstall Tailscale) at any time.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="short">
+      <h2>Short version (for email / Discord)</h2>
+<pre>COTHE LLC — what to install
+• Remote (outside-only) check: nothing to install. While at the location, open the authorize form and tap "Use my IP".
+• Full home/business check:
+  1) Make a free Tailscale account: https://tailscale.com/download
+  2) Install it — Windows: https://tailscale.com/download/windows  Mac: https://tailscale.com/download/mac  Phones: https://tailscale.com/download
+  3) Sign in and leave it connected.
+  4) Share the device with COTHE (we'll send our Tailscale invite after payment).
+  You can unshare or uninstall any time after the assessment.
+Details: https://holydog413.github.io/cothe-llc/setup/</pre>
+    </section>
+    <p><a href="../">← Back to COTHE LLC</a></p>
+  </main>
+</body>
+</html>
