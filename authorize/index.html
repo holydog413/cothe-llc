@@ -445,7 +445,8 @@
   <div class="toolbar">
     <h1>Network Assessment Authorization</h1>
     <div class="actions">
-      <button type="button" id="btnDownloadJson" class="primary">Download answers</button>
+      <button type="button" id="btnSubmitIntake" class="primary">Submit to COTHE</button>
+      <button type="button" id="btnDownloadJson">Download answers</button>
       <button type="button" onclick="window.print()">Print / Save PDF</button>
     </div>
   </div>
@@ -729,7 +730,8 @@
         and the authorizing-person photo as a compressed JPEG data URL.
       </p>
       <div class="btn-row">
-        <button type="button" class="btn primary" id="btnDownloadJson2">Download answers (JSON)</button>
+        <button type="button" class="btn primary" id="btnSubmitIntake2">Submit to COTHE</button>
+        <button type="button" class="btn ghost" id="btnDownloadJson2">Download answers (JSON)</button>
         <button type="button" class="btn ghost" onclick="window.print()">Print / Save PDF</button>
       </div>
     </div>
@@ -742,6 +744,7 @@
     </p>
   </main>
 
+  <script src="intake-config.js"></script>
   <script>
     (function () {
       /* ---- LLC name sync ---- */
@@ -1058,6 +1061,66 @@
 
       document.getElementById("btnDownloadJson").addEventListener("click", downloadAnswers);
       document.getElementById("btnDownloadJson2").addEventListener("click", downloadAnswers);
+
+      /* ---- Submit to COTHE (Discord webhook) ---- */
+      function dataUrlToBlob(u) {
+        var parts = u.split(","), mime = parts[0].match(/:(.*?);/)[1], bin = atob(parts[1]);
+        var arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return new Blob([arr], { type: mime });
+      }
+      function clip(v, n) { v = (v || "").toString(); if (!v) return "—"; return v.length > n ? v.slice(0, n - 1) + "…" : v; }
+      var submitting = false;
+      function submitIntake() {
+        var hook = (window.COTHE_INTAKE_WEBHOOK || "").trim();
+        if (!hook) { alert("Online submission is not configured yet. Please use Download answers and email the file to COTHE."); return; }
+        if (submitting) return;
+        var d = collectAnswers(), a = d.authorizingPerson, c = d.client, e = d.engagement;
+        if (!c.organization || !c.email || !a.typedLegalName) { alert("Please fill in Client organization, email, and the authorizing person's typed legal name before submitting."); return; }
+        var tests = [e.nonDestructiveDefault ? "Non-destructive (default)" : null, e.intrusiveRequestedCheckbox ? "Intrusive testing REQUESTED (needs separate agreement)" : null].filter(Boolean).join("\n") || "—";
+        var embed = {
+          title: "New authorization — " + clip(c.organization, 200),
+          color: 0x2563eb,
+          timestamp: d.generatedAt,
+          fields: [
+            { name: "Client contact", value: clip(c.contact, 1000), inline: true },
+            { name: "Company", value: clip(c.organization, 1000), inline: true },
+            { name: "Email", value: clip(c.email, 1000), inline: true },
+            { name: "Phone", value: clip(c.phone, 1000), inline: true },
+            { name: "Schedule", value: clip((e.startDate || "?") + " → " + (e.endDate || "?"), 1000), inline: true },
+            { name: "Address", value: clip(c.address, 1000), inline: true },
+            { name: "Network scope / IP / CIDR", value: clip(e.targets, 1000) },
+            { name: "Out of scope", value: clip(e.outOfScope, 1000) },
+            { name: "Allowed tests / objectives", value: clip(tests + (e.objectives ? "\n" + e.objectives : ""), 1000) },
+            { name: "Special instructions", value: clip(e.specialInstructions, 1000) },
+            { name: "Signed by", value: clip(a.typedLegalName + (a.title ? ", " + a.title : "") + " — " + (a.date || "no date"), 1000) },
+            { name: "Attachments", value: "E-signature: " + (a.signaturePresent ? "✅ captured" : "❌ none") + "\nID photo: " + (a.identityPhotoPresent ? "✅ captured" : "❌ none") }
+          ],
+          footer: { text: d.serviceProviderLlc + " intake form" }
+        };
+        var embeds = [embed], fd = new FormData(), n = 0;
+        if (a.signaturePngDataUrl) { fd.append("files[" + n + "]", dataUrlToBlob(a.signaturePngDataUrl), "signature.png"); n++; embed.image = { url: "attachment://signature.png" }; }
+        if (a.identityPhotoJpegDataUrl) {
+          var pb = dataUrlToBlob(a.identityPhotoJpegDataUrl);
+          if (pb.size < 8 * 1024 * 1024) { fd.append("files[" + n + "]", pb, "id-photo.jpg"); n++; embeds.push({ title: "ID photo", color: 0x2563eb, image: { url: "attachment://id-photo.jpg" } }); }
+        }
+        var slim = JSON.parse(JSON.stringify(d));
+        delete slim.authorizingPerson.signaturePngDataUrl; delete slim.authorizingPerson.identityPhotoJpegDataUrl;
+        fd.append("files[" + n + "]", new Blob([JSON.stringify(slim, null, 2)], { type: "application/json" }), "answers.json");
+        fd.append("payload_json", JSON.stringify({ username: "COTHE Intake", embeds: embeds, allowed_mentions: { parse: [] } }));
+        submitting = true;
+        sigStatus.textContent = "Submitting…";
+        fetch(hook, { method: "POST", body: fd }).then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          sigStatus.textContent = "Submitted to COTHE. Thank you — we'll be in touch.";
+          alert("Submitted to COTHE. Thank you!");
+        }).catch(function (err) {
+          sigStatus.textContent = "Submit failed (" + err.message + "). Please use Download answers and email the file.";
+          alert("Submit failed. Please use Download answers and email the file to COTHE.");
+        }).then(function () { submitting = false; });
+      }
+      document.getElementById("btnSubmitIntake").addEventListener("click", submitIntake);
+      document.getElementById("btnSubmitIntake2").addEventListener("click", submitIntake);
 
       /* default today's date for client sig */
       var dateEl = document.getElementById("clientSigDate");
