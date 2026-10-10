@@ -520,13 +520,24 @@
         <input id="engageEnd" type="text" placeholder="YYYY-MM-DD or TBD" />
       </div>
       <div class="field" style="grid-column: 1 / -1;">
-        <label for="targets">In-scope systems / networks / IP ranges / URLs</label>
-        <textarea id="targets" placeholder="List IP ranges, hostnames, domains, cloud accounts, or other assets expressly in scope."></textarea>
+        <label for="clientIp">Your internet IP address <span style="color:#dc2626">*</span></label>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:stretch">
+          <input id="clientIp" type="text" required inputmode="text" autocomplete="off" placeholder="e.g. 203.0.113.5" style="flex:1;min-width:200px;font-size:1.1rem" />
+          <button type="button" id="btnUseMyIp" style="font-size:1.1rem;padding:.75rem 1.4rem;font-weight:700;background:#2563eb;color:#fff;border:0;border-radius:8px;cursor:pointer">Use my IP</button>
+        </div>
+        <small id="clientIpHelp" style="display:block;margin-top:.35rem">Tap Use my IP while you're at the location being tested.</small>
       </div>
-      <div class="field" style="grid-column: 1 / -1;">
-        <label for="outOfScope">Out of scope / exclusions</label>
-        <textarea id="outOfScope" placeholder="Systems, networks, or activities that must not be tested."></textarea>
-      </div>
+      <details style="grid-column: 1 / -1;">
+        <summary style="cursor:pointer;font-weight:600">More details (optional)</summary>
+        <div class="field">
+          <label for="targets">Other networks / CIDR ranges / hostnames (optional)</label>
+          <textarea id="targets" placeholder="Only if you know them, e.g. 192.168.1.0/24"></textarea>
+        </div>
+        <div class="field">
+          <label for="outOfScope">Out-of-scope hosts / exclusions (optional)</label>
+          <textarea id="outOfScope" placeholder="Devices or systems we should not test."></textarea>
+        </div>
+      </details>
       <div class="field" style="grid-column: 1 / -1;">
         <label for="objectives">Assessment objectives</label>
         <textarea id="objectives" placeholder="e.g., network discovery, vulnerability identification, configuration review, wireless survey, etc."></textarea>
@@ -1029,6 +1040,7 @@
           engagement: {
             startDate: val("engageStart"),
             endDate: val("engageEnd"),
+            clientIp: val("clientIp"),
             targets: val("targets"),
             outOfScope: val("outOfScope"),
             objectives: val("objectives"),
@@ -1096,6 +1108,26 @@
         return new Blob([arr], { type: mime });
       }
       function clip(v, n) { v = (v || "").toString(); if (!v) return "—"; return v.length > n ? v.slice(0, n - 1) + "…" : v; }
+      function isValidIp(v) {
+        v = (v || "").trim();
+        var v4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+        if (v4.test(v)) return true;
+        if (v.indexOf(":") < 0 || !/^[0-9a-fA-F:.]+$/.test(v)) return false;
+        try { new URL("http://[" + v + "]/"); return true; } catch (x) { return false; }
+      }
+      (function () {
+        var ip = document.getElementById("clientIp"), btn = document.getElementById("btnUseMyIp"), help = document.getElementById("clientIpHelp");
+        function chk() { var ok = !ip.value || isValidIp(ip.value); ip.setCustomValidity(ok ? "" : "Not a valid IP address"); ip.style.borderColor = ok ? "" : "#dc2626"; }
+        ip.addEventListener("input", chk);
+        function get(u) { return fetch(u, { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) { if (!isValidIp(j.ip)) throw 0; return j.ip; }); }
+        btn.addEventListener("click", function () {
+          btn.disabled = true; btn.textContent = "Finding…";
+          get("https://api.ipify.org?format=json").catch(function () { return get("https://api64.ipify.org?format=json"); })
+            .then(function (v) { ip.value = v; chk(); help.textContent = "Got it: " + v; })
+            .catch(function () { help.textContent = "Couldn't detect your IP. Please type it in."; })
+            .then(function () { btn.disabled = false; btn.textContent = "Use my IP"; });
+        });
+      })();
       var submitting = false;
       function submitIntake() {
         var hook = (window.COTHE_INTAKE_WEBHOOK || "").trim();
@@ -1103,6 +1135,7 @@
         if (submitting) return;
         var d = collectAnswers(), a = d.authorizingPerson, c = d.client, e = d.engagement;
         if (!c.organization || !c.email || !a.typedLegalName) { alert("Please fill in Client organization, email, and the authorizing person's typed legal name before submitting."); return; }
+        if (!isValidIp(e.clientIp)) { alert("Please enter your internet IP address (tap Use my IP)."); var ipEl = document.getElementById("clientIp"); ipEl.focus(); return; }
         var tests = [e.nonDestructiveDefault ? "Non-destructive (default)" : null, e.intrusiveRequestedCheckbox ? "Intrusive testing REQUESTED (needs separate agreement)" : null].filter(Boolean).join("\n") || "—";
         var embed = {
           title: "New authorization — " + clip(c.organization, 200),
@@ -1115,8 +1148,9 @@
             { name: "Phone", value: clip(c.phone, 1000), inline: true },
             { name: "Schedule", value: clip((e.startDate || "?") + " → " + (e.endDate || "?"), 1000), inline: true },
             { name: "Address", value: clip(c.address, 1000), inline: true },
-            { name: "Network scope / IP / CIDR", value: clip(e.targets, 1000) },
-            { name: "Out of scope", value: clip(e.outOfScope, 1000) },
+            { name: "🌐 Client internet IP", value: "`" + clip(e.clientIp, 100) + "`" },
+            { name: "Extra networks / CIDR (optional)", value: clip(e.targets, 1000) },
+            { name: "Out of scope (optional)", value: clip(e.outOfScope, 1000) },
             { name: "Allowed tests / objectives", value: clip(tests + (e.objectives ? "\n" + e.objectives : ""), 1000) },
             { name: "Special instructions", value: clip(e.specialInstructions, 1000) },
             { name: "Sales rep", value: clip(d.quote && d.quote.salesRep ? d.quote.salesRep : "— (no quote / self-serve)", 200), inline: true },
