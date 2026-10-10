@@ -48,7 +48,10 @@ WEBHOOK = os.environ.get("COTHE_INTAKE_WEBHOOK_URL", "").strip()
 if not WEBHOOK:
     try:
         import json as _j
-        WEBHOOK = (_j.load(open("/home/box/agent-data/box-secrets.json")).get("COTHE_INTAKE_WEBHOOK_URL") or "").strip()
+        import re as _re
+        _cfg = open("/workspace/cothe-llc/authorize/intake-config.js").read()
+        _m = _re.search(r"https://discord(?:app)?\.com/api/webhooks/[\w/-]+", _cfg)
+        WEBHOOK = _m.group(0) if _m else ""
     except Exception:
         WEBHOOK = ""
 
