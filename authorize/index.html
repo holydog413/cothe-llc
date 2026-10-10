@@ -995,7 +995,7 @@
       function quoteText(q) {
         if (!q) return "No quote attached";
         var m = function (n) { return "$" + Number(n).toFixed(2); };
-        return (q.lines && q.lines.length ? q.lines.join("\n") : "(no one-time services)") +
+        return (q.salesRep ? "Prepared by: " + q.salesRep + "\n" : "") + (q.lines && q.lines.length ? q.lines.join("\n") : "(no one-time services)") +
           "\nSubtotal " + m(q.subtotal) + (q.discount ? " | Discount -" + m(q.discountAmt) : "") +
           "\nTaxable " + m(q.taxable) + " | Tax " + m(q.tax) + " (" + q.taxRate + "%, " + q.state + ", " + q.use + ")" +
           "\nOne-time total " + m(q.oneTimeTotal) +
@@ -1119,6 +1119,7 @@
             { name: "Out of scope", value: clip(e.outOfScope, 1000) },
             { name: "Allowed tests / objectives", value: clip(tests + (e.objectives ? "\n" + e.objectives : ""), 1000) },
             { name: "Special instructions", value: clip(e.specialInstructions, 1000) },
+            { name: "Sales rep", value: clip(d.quote && d.quote.salesRep ? d.quote.salesRep : "— (no quote / self-serve)", 200), inline: true },
             { name: "Quote (estimate)", value: clip(quoteText(d.quote), 1000) },
             { name: "Signed by", value: clip(a.typedLegalName + (a.title ? ", " + a.title : "") + " — " + (a.date || "no date"), 1000) },
             { name: "Attachments", value: "E-signature: " + (a.signaturePresent ? "✅ captured" : "❌ none") + "\nID photo: " + (a.identityPhotoPresent ? "✅ captured" : "❌ none") }

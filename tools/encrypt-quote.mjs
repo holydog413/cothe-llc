@@ -7,7 +7,7 @@ if (!pw) { console.error("COTHE_SALES_PASSWORD not set"); process.exit(1); }
 const r = f => readFileSync(`${src}/${f}`, "utf8");
 const payload = JSON.stringify({ css: r("builder.css"), html: r("builder.html"), js: [r("tax-data.js"), r("quote.js")] });
 const ITER = 600000, salt = C.getRandomValues(new Uint8Array(16)), iv = C.getRandomValues(new Uint8Array(12));
-const base = await C.subtle.importKey("raw", new TextEncoder().encode("sales:" + pw), "PBKDF2", false, ["deriveKey"]);
+const base = await C.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
 const key = await C.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt, iterations: ITER }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
 const ct = new Uint8Array(await C.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(payload)));
 const b64 = u => Buffer.from(u).toString("base64");
