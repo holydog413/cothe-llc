@@ -989,6 +989,31 @@
         return el ? (el.value || "").trim() : "";
       }
 
+      function storedQuote() {
+        try { var q = JSON.parse(localStorage.getItem("cothe_quote") || "null"); return q && q.createdAt ? q : null; } catch (e) { return null; }
+      }
+      function quoteText(q) {
+        if (!q) return "No quote attached";
+        var m = function (n) { return "$" + Number(n).toFixed(2); };
+        return (q.lines && q.lines.length ? q.lines.join("\n") : "(no one-time services)") +
+          "\nSubtotal " + m(q.subtotal) + (q.discount ? " | Discount -" + m(q.discountAmt) : "") +
+          "\nTaxable " + m(q.taxable) + " | Tax " + m(q.tax) + " (" + q.taxRate + "%, " + q.state + ", " + q.use + ")" +
+          "\nOne-time total " + m(q.oneTimeTotal) +
+          (q.monthly ? "\n" + q.monitoring + ": " + m(q.monthlyTotal) + "/mo incl. tax" : "");
+      }
+      (function showQuote() {
+        var q = storedQuote(); if (!q) return;
+        var box = document.createElement("div");
+        box.id = "quoteAttached";
+        box.style.cssText = "max-width:900px;margin:12px auto;padding:10px 14px;background:#e8f0fa;border:1px solid #1e4d8c;border-radius:8px;font-size:13px;white-space:pre-line";
+        box.textContent = "Quote attached to this submission (estimate only):\n" + quoteText(q);
+        var rm = document.createElement("button"); rm.type = "button"; rm.textContent = "Remove quote"; rm.style.marginTop = "6px";
+        rm.onclick = function () { try { localStorage.removeItem("cothe_quote"); } catch (e) {} box.remove(); };
+        box.appendChild(document.createElement("br")); box.appendChild(rm);
+        var tb = document.querySelector(".toolbar");
+        if (tb && tb.parentNode) tb.parentNode.insertBefore(box, tb.nextSibling); else document.body.insertBefore(box, document.body.firstChild);
+      })();
+
       function collectAnswers() {
         var sig = getSignaturePngDataUrl();
         return {
@@ -1029,6 +1054,7 @@
             identityPhotoPresent: !!photoDataUrl,
             identityPhotoLabel: "Photo of the authorizing person for identity on the authorization"
           },
+          quote: storedQuote(),
           serviceProviderRep: {
             printedName: val("providerSigName"),
             title: val("providerSigTitle"),
@@ -1093,6 +1119,7 @@
             { name: "Out of scope", value: clip(e.outOfScope, 1000) },
             { name: "Allowed tests / objectives", value: clip(tests + (e.objectives ? "\n" + e.objectives : ""), 1000) },
             { name: "Special instructions", value: clip(e.specialInstructions, 1000) },
+            { name: "Quote (estimate)", value: clip(quoteText(d.quote), 1000) },
             { name: "Signed by", value: clip(a.typedLegalName + (a.title ? ", " + a.title : "") + " — " + (a.date || "no date"), 1000) },
             { name: "Attachments", value: "E-signature: " + (a.signaturePresent ? "✅ captured" : "❌ none") + "\nID photo: " + (a.identityPhotoPresent ? "✅ captured" : "❌ none") }
           ],
