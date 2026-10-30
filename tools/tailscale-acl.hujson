@@ -1,0 +1,41 @@
+// COTHE LLC — Tailscale access policy (paste into admin console → Access controls → JSON editor).
+// NOT applied automatically. Replace COTHE_ADMIN_EMAIL before saving.
+//
+// Model:
+//   tag:cothe-scanner  = the COTHE scan box (only thing allowed to reach client LANs)
+//   tag:cothe-client   = each client's always-on PC / drop box acting as a subnet router
+// Tailscale is default-deny: anything not granted below is blocked. Clients get NO grants,
+// so a client device cannot reach the scanner, other clients, or any other client's LAN.
+{
+  "tagOwners": {
+    "tag:cothe-scanner": ["COTHE_ADMIN_EMAIL"],
+    "tag:cothe-client":  ["COTHE_ADMIN_EMAIL"]
+  },
+
+  // Subnet routes advertised by client devices are approved by hand (Machines → Edit route settings).
+  // Do NOT add autoApprovers — each route is checked against the signed authorization first.
+
+  "grants": [
+    // ---- One block per active client: scanner → that client's authorized CIDR only. ----
+    // Copy this block per client, set dst to the LAN range on their signed authorization,
+    // and delete it when the report is delivered (with the device — see cothe_tailscale_cleanup.py).
+    // Example (client "Acme Co", authorization 1558499999999999999):
+    // {
+    //   "src": ["tag:cothe-scanner"],
+    //   "dst": ["192.168.1.0/24"],
+    //   "ip":  ["tcp:*"]
+    // },
+
+    // Scanner may reach the client router device itself (needed for the route to work).
+    { "src": ["tag:cothe-scanner"], "dst": ["tag:cothe-client"], "ip": ["tcp:*"] }
+
+    // Intentionally nothing with src tag:cothe-client.
+  ],
+
+  "ssh": [],
+
+  "tests": [
+    { "src": "tag:cothe-scanner", "accept": ["tag:cothe-client:443"] },
+    { "src": "tag:cothe-client",  "deny":   ["tag:cothe-scanner:22", "tag:cothe-client:445"] }
+  ]
+}

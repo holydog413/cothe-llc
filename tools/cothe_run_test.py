@@ -222,7 +222,8 @@ def build_internal_report(scan, operator, company, signed_by, auth_id, payment=N
           "2. Put cameras, smart-home, and guest devices on a separate VLAN / guest network.",
           "3. Change default passwords on printers, cameras, NAS, and routers; update firmware.",
           "4. Turn off SMB/RDP/VNC on machines that don't need to share or be remotely controlled.",
-          "", "_Report for the Client's internal use. Scope limited to the authorized ranges and window._"]
+          ""] + removal_checklist_lines() + [
+          "_Report for the Client's internal use. Scope limited to the authorized ranges and window._"]
     return "\n".join(L) + "\n"
 
 
@@ -679,6 +680,7 @@ def extract_from_answers(path):
                          if e.get("internalTesting") is True else "",
         "internal_raw": str(e.get("internalRanges") or ""),
         "internal_access": str(e.get("internalAccess") or ""),
+        "internal_safety_ack": e.get("internalSafetyAck") is True,
         "internal_notes": "; ".join(x for x in [
             "always-on PC available" if e.get("internalPcAvailable") else "",
             "prefers drop box" if e.get("internalPreferDropBox") else "",
@@ -710,6 +712,8 @@ def validate_internal(info):
         return "refused", "the authorization's internal LAN range %s is missing/invalid (private range, /22 or smaller)" % _shown(info.get("internal_raw"))
     if qc != ac:
         return "refused", "authorized LAN range `%s` doesn't match quote `%s`" % (ac, qc)
+    if info.get("internal_safety_ack") is not True:
+        return "refused", "the client didn't tick the internal-testing safety acknowledgement on the authorization"
     return "ok", ac
 
 
@@ -763,6 +767,22 @@ def internal_discord_line(it):
             % (it["cidr"], len(r["hosts"]), sum(len(v) for v in r["hosts"].values()), hi))
 
 
+def removal_checklist_lines(cleanup_at=""):
+    done = ("- [x] COTHE removed the client device and its subnet route from COTHE's tailnet — %s" % cleanup_at
+            if cleanup_at else
+            "- [ ] COTHE removed the client device and its subnet route from COTHE's tailnet "
+            "(operator: reply `cleanup` to the authorization, or remove in Tailscale admin → Machines) — date/time: ________")
+    return ["### Removal checklist", "",
+            done,
+            "- [ ] COTHE deleted this client's access rule (grant) from the tailnet policy",
+            "- [ ] Client uninstalled Tailscale on Windows: right-click the Tailscale icon by the clock → **Log out**, "
+            "then Start → Settings → Apps → Installed apps → **Tailscale** → **Uninstall** "
+            "(drop box: unplug it and mail it back in the prepaid box)",
+            "",
+            "**COTHE keeps no access afterward.** Once the device is removed, COTHE has no connection to your "
+            "network, no saved logins, and nothing installed on your devices.", ""]
+
+
 def internal_report_lines(it):
     L = ["## 2. Inside-out findings (LAN view via Tailscale)", ""]
     s = (it or {}).get("status", "not_requested")
@@ -799,6 +819,7 @@ def internal_report_lines(it):
     else:
         L.append("- No obvious risky services found on the LAN among common ports.")
     L.append("")
+    L += removal_checklist_lines(it.get("cleanup_at", ""))
     return L
 
 

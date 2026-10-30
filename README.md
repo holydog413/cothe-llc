@@ -63,3 +63,23 @@ watcher on the box still runs external scans only.
    if you want a standing invite link.
 
 Self-test (no client traffic): `python3 tools/cothe_watch_run_test.py --self-test`
+
+### Tailscale access rules (ACL) — paste once
+1. Open `tools/tailscale-acl.hujson`, replace `COTHE_ADMIN_EMAIL` with the COTHE admin login.
+2. Tailscale admin console → **Access controls** → JSON editor → replace contents → **Save**
+   (the `tests` block must pass or Tailscale refuses the save).
+3. The box joins with `tag:cothe-scanner` (generate its auth key with that tag).
+4. **Per client:** add one grant block `{ "src": ["tag:cothe-scanner"], "dst": ["<their CIDR>"], "ip": ["tcp:*"] }`
+   matching the CIDR on their signed authorization; delete it when the report is delivered.
+   Client devices get no grants, so they can't reach the scanner, other clients, or anything else.
+
+### One-time client auth keys
+Admin console → Settings → **Keys** → Generate auth key: **not** reusable, **Pre-approved** on,
+**Tags:** `tag:cothe-client`, **Expiration: 1 day**. Send it only to that client (it replaces
+`YOUR_TAILSCALE_AUTH_KEY` in their setup command). Then approve their subnet route by hand.
+
+### Cleanup after the report
+Reply `cleanup` to the authorization in #intake (or `python3 tools/cothe_tailscale_cleanup.py --auth-id <id>`).
+Needs a Tailscale API access token as box secret `COTHE_TS_API_KEY`; without it the tool refuses and
+tells you to remove the device by hand (Machines → … → Remove). Every inside-out report includes a
+Removal checklist.

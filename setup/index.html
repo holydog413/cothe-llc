@@ -29,12 +29,22 @@
       <p>If your quote includes the <strong>internal (inside-out) network assessment</strong>, we check your network from the inside — the same safe, look-don't-touch checks, aimed at the computers, cameras, printers, and other devices on your Wi-Fi/wired network. To reach them we use <strong>Tailscale</strong>, a free, well-known secure connection app. <strong>You stay in control</strong>: you can turn it off or uninstall it any time, and we only ever check the network range you wrote on your authorization (for example <code>192.168.1.0/24</code>).</p>
       <p><strong>What you need:</strong> one Windows PC at the location that stays on (a desktop that isn't put to sleep is ideal) and about 10 minutes. We never ask for your passwords — not on this page, not by phone.</p>
 
+      <div style="border:2px solid #16a34a;background:#f0fdf4;border-radius:10px;padding:.8rem 1.1rem;margin:1rem 0">
+        <strong>🛡️ Your safety</strong>
+        <ul style="margin:.4rem 0 0">
+          <li><strong>What gets installed:</strong> only the official Tailscale app from <a href="https://tailscale.com/download">tailscale.com/download</a> — or nothing at all if you choose a COTHE drop box.</li>
+          <li><strong>Limited access:</strong> COTHE can reach only the LAN range on your signed authorization. Tailscale rules block us from everything else, and your PC can't reach COTHE or other clients.</li>
+          <li><strong>Look-only:</strong> no logins, no password guessing, no exploits, no changes to your devices.</li>
+          <li><strong>We leave:</strong> COTHE removes your device and access when your report is delivered and keeps none afterward. You can log out of Tailscale at any time to cut the connection instantly.</li>
+          <li>We never ask for your passwords.</li>
+        </ul>
+      </div>
       <h3>Step 1 — Install Tailscale</h3>
       <ol>
-        <li>On the always-on PC, go to <a href="https://tailscale.com/download/windows">tailscale.com/download/windows</a> and run the installer (click <em>Yes</em> when Windows asks for permission).</li>
+        <li>On the always-on PC, go to <a href="https://tailscale.com/download">tailscale.com/download</a> (choose <em>Windows</em>) and run the installer (click <em>Yes</em> when Windows asks for permission).</li>
         <li>A small Tailscale icon appears near the clock (bottom-right; you may need to click the <strong>^</strong> arrow to see it).</li>
       </ol>
-      <div class="dl"><a href="https://tailscale.com/download/windows">Download Tailscale for Windows</a></div>
+      <div class="dl"><a href="https://tailscale.com/download">Download Tailscale (official site)</a></div>
 
       <h3>Step 2 — Join COTHE's network</h3>
       <p>Your COTHE contact sends you a one-time <strong>invite link</strong> (or a short setup key) after your quote is signed and paid.</p>
@@ -70,7 +80,7 @@
 <pre>COTHE LLC — what to install
 • Outside-in (internet) check: nothing to install. While at the location, open the authorize form and tap "Use my IP".
 • Inside-out (internal network) check — on an always-on Windows PC:
-  1) Install Tailscale: https://tailscale.com/download/windows
+  1) Install Tailscale (official site only): https://tailscale.com/download
   2) Join COTHE's network with the invite your COTHE contact sends (ask your COTHE contact for the invite)
   3) Command Prompt (admin): tailscale up --advertise-routes=YOUR_LAN_RANGE --authkey=YOUR_TAILSCALE_AUTH_KEY
   4) Keep the PC on; COTHE approves the route and runs the check

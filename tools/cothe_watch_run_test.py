@@ -29,6 +29,8 @@ Safety:
     internal part is refused with a Discord note and outside-in still runs. Only the authorized
     CIDR is ever scanned. If the client wasn't ready, a later `run internal` reply to the same
     authorization runs ONLY the internal part, once, after re-checking every gate.
+  * `cleanup` reply: removes the client's Tailscale device via the Tailscale API
+    (tools/cothe_tailscale_cleanup.py; needs COTHE_TS_API_KEY, refuses cleanly without it).
 
   python3 tools/cothe_watch_run_test.py --help | --self-test
 
@@ -49,6 +51,7 @@ REPLY_WINDOW_MIN = int(os.environ.get("REPLY_WINDOW_MIN", "180"))
 DRY = os.environ.get("DRY_RUN") == "1"
 RUN_TEST_RE = re.compile(r"^\s*run\s+test\s*$", re.IGNORECASE)
 RUN_INTERNAL_RE = re.compile(r"^\s*run\s+internal\s*$", re.IGNORECASE)
+CLEANUP_RE = re.compile(r"^\s*cleanup(?:\s+(\d{15,22}))?\s*$", re.IGNORECASE)
 API = "https://discord.com/api/v10"
 
 
@@ -268,16 +271,47 @@ def process_run_internal(msgs, by_id):
     return n
 
 
+def process_cleanup(msgs, by_id):
+    """`cleanup` reply to an authorization (or `cleanup <auth id>`): remove the client's Tailscale
+    device via cothe_tailscale_cleanup (needs COTHE_TS_API_KEY; refuses cleanly without it)."""
+    import cothe_tailscale_cleanup as tsc
+    n = 0
+    for m in reversed(msgs):
+        mm = CLEANUP_RE.match(m.get("content") or "")
+        if not mm or m.get("webhook_id"):
+            continue
+        auth_id = mm.group(1)
+        if not auth_id:
+            auth = find_auth(m, msgs, by_id)
+            auth_id = auth["id"] if auth else None
+        seen = core.load_seen()
+        rec = seen.get(auth_id or "")
+        if not rec or m["id"] in (rec.get("cleanup_msgs") or []):
+            continue
+        if not rec.get("internal_cidr"):
+            continue  # no inside-out on this authorization
+        ok, msg = tsc.cleanup(auth_id, dry_run=DRY)
+        if DRY:
+            print("[DRY] cleanup %s: %s" % (auth_id, msg)); continue
+        core.post_webhook(content="(requested by %s) %s" % (display_name(m.get("author") or {}), msg))
+        seen = core.load_seen()
+        seen[auth_id].setdefault("cleanup_msgs", []).append(m["id"])
+        core.save_seen(seen)
+        n += ok
+    return n
+
+
 def self_test():
     """Offline self-test: gate logic on synthetic answers + a direct scan of 127.0.0.1 only."""
     q = {"tier": "Home Security Check", "tierId": "home", "lines": ["Home Security Check: $249.00"],
          "internal": True, "internalCidr": "192.168.1.0/24", "internalNotes": "always-on PC available for Tailscale"}
-    base = {"quote": q, "internal_requested": True, "internal_cidr": "192.168.1.0/24", "internal_raw": "192.168.1.0/24"}
+    base = {"quote": q, "internal_requested": True, "internal_safety_ack": True, "internal_cidr": "192.168.1.0/24", "internal_raw": "192.168.1.0/24"}
     cases = [("both requested, same CIDR", base, "ok"),
              ("auth not checked", dict(base, internal_requested=False), "refused"),
              ("quote lacks internal", dict(base, quote=dict(q, internal=False)), "refused"),
              ("CIDR mismatch", dict(base, internal_cidr="192.168.2.0/24"), "refused"),
              ("public CIDR", dict(base, internal_cidr=core.internal_scan.norm_cidrs("8.8.8.0/24")), "refused"),
+             ("no safety acknowledgement", dict(base, internal_safety_ack=False), "refused"),
              ("neither", {"quote": dict(q, internal=False)}, "not_requested")]
     bad = 0
     for name, info, want in cases:
@@ -392,6 +426,10 @@ def process():
                                 "internal": internal.get("status"), "internal_cidr": internal.get("cidr", "")}
             core.save_seen(seen)
             handled += 1
+    try:
+        process_cleanup(msgs, by_id)
+    except Exception as ex:
+        print("[cleanup] error: %s" % type(ex).__name__, file=sys.stderr)
     try:
         handled += process_run_internal(msgs, by_id)
     except Exception as ex:

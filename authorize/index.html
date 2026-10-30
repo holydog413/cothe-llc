@@ -594,6 +594,7 @@
           <label style="display:flex;align-items:center;gap:.5rem;text-transform:none;letter-spacing:0;font-size:14px;margin-top:.4rem"><input type="checkbox" id="internalDrop" style="width:auto;margin:0" /> I'd prefer a mailed drop box later</label>
           <label for="internalNotes" style="margin-top:.5rem">Notes (optional)</label>
           <input id="internalNotes" type="text" autocomplete="off" placeholder="e.g. office PC in back room is on 24/7" />
+          <label style="display:flex;align-items:flex-start;gap:.5rem;text-transform:none;letter-spacing:0;font-size:14px;font-weight:400;margin-top:.75rem;padding:8px 10px;background:#f1f5f9;border-radius:6px"><input type="checkbox" id="internalSafetyAck" style="width:auto;margin:3px 0 0" /> <span id="internalSafetyText">I understand: only the official Tailscale app from tailscale.com (or a COTHE drop box) is installed. COTHE's access is limited to the LAN range listed above and blocked from everything else. Scans are look-only — no logins, no exploits, no changes to my devices. COTHE removes its access when the report is delivered and keeps none afterward.</span> <span style="color:#dc2626">*</span></label>
           <p id="internalQuoteWarn" role="status" hidden style="margin:.5rem 0 0;padding:6px 10px;font-size:13px;border-radius:6px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d"></p>
         </div>
       </div>
@@ -1560,6 +1561,8 @@
             internalPcAvailable: !!(document.getElementById("internalTesting") && document.getElementById("internalTesting").checked && document.getElementById("internalPc").checked),
             internalPreferDropBox: !!(document.getElementById("internalTesting") && document.getElementById("internalTesting").checked && document.getElementById("internalDrop").checked),
             internalNotes: (document.getElementById("internalTesting") && document.getElementById("internalTesting").checked) ? val("internalNotes") : "",
+            internalSafetyAck: !!(document.getElementById("internalTesting") && document.getElementById("internalTesting").checked && document.getElementById("internalSafetyAck").checked),
+            internalSafetyText: (document.getElementById("internalTesting") && document.getElementById("internalTesting").checked) ? document.getElementById("internalSafetyText").textContent : "",
             targets: val("targets"),
             outOfScope: val("outOfScope"),
             objectives: val("objectives"),
@@ -1680,6 +1683,7 @@
         var d = collectAnswers(), a = d.authorizingPerson, c = d.client, e = d.engagement;
         if (!c.organization || !c.email || !a.typedLegalName) { alert("Please fill in Client organization, email, and the authorizing person's typed legal name before submitting."); return; }
         if (!isValidIp(e.clientIp)) { alert("Please enter your internet IP address (tap Use my IP)."); var ipEl = document.getElementById("clientIp"); ipEl.focus(); return; }
+        if (e.internalTesting && !e.internalSafetyAck) { alert("Internal testing: please read and tick the safety acknowledgement under your LAN range."); document.getElementById("internalSafetyAck").focus(); return; }
         if (e.internalTesting && !normCidrs(e.internalRanges)) { alert("Internal testing: enter private network range(s) like 192.168.1.0/24 (each /22 or smaller)."); document.getElementById("internalRanges").focus(); return; }
         var tests = [e.nonDestructiveDefault ? "Non-destructive (default)" : null, e.intrusiveRequestedCheckbox ? "Intrusive testing REQUESTED (needs separate agreement)" : null].filter(Boolean).join("\n") || "—";
         var embed = {
@@ -1694,7 +1698,7 @@
             { name: "Schedule", value: clip((e.startDate || "?") + " → " + (e.endDate || "?"), 1000), inline: true },
             { name: "Address", value: clip(c.address, 1000), inline: true },
             { name: "🌐 Client internet IP", value: "`" + clip(e.clientIp, 100) + "`" },
-            { name: "🏠 Internal (inside-out) testing", value: e.internalTesting ? clip("YES — LAN `" + e.internalCidr + "` via " + ({ tailscale: "Tailscale subnet router (always-on PC)", dropbox: "mailed drop box (later)", onsite: "on-site visit", device: "client scan device" }[e.internalAccess] || e.internalAccess) + (e.internalPcAvailable ? " · always-on PC ✅" : "") + (e.internalPreferDropBox ? " · prefers drop box" : "") + (e.internalNotes ? " · " + e.internalNotes : "") + (d.quote && d.quote !== "none" ? (d.quote.internal ? (normCidrs(d.quote.internalCidr) === e.internalCidr ? " · quote ✅ same LAN" : " · ⚠️ quote LAN `" + (d.quote.internalCidr || "?") + "` differs") : " · ⚠️ quote does NOT include internal") : ""), 1000) : "No (external only)" },
+            { name: "🏠 Internal (inside-out) testing", value: e.internalTesting ? clip("YES — LAN `" + e.internalCidr + "` via " + ({ tailscale: "Tailscale subnet router (always-on PC)", dropbox: "mailed drop box (later)", onsite: "on-site visit", device: "client scan device" }[e.internalAccess] || e.internalAccess) + (e.internalPcAvailable ? " · always-on PC ✅" : "") + (e.internalPreferDropBox ? " · prefers drop box" : "") + (e.internalNotes ? " · " + e.internalNotes : "") + (e.internalSafetyAck ? " · safety terms ✅ acknowledged" : " · ❌ safety terms NOT acknowledged") + (d.quote && d.quote !== "none" ? (d.quote.internal ? (normCidrs(d.quote.internalCidr) === e.internalCidr ? " · quote ✅ same LAN" : " · ⚠️ quote LAN `" + (d.quote.internalCidr || "?") + "` differs") : " · ⚠️ quote does NOT include internal") : ""), 1000) : "No (external only)" },
             { name: "Extra networks / CIDR (optional)", value: clip(e.targets, 1000) },
             { name: "Out of scope (optional)", value: clip(e.outOfScope, 1000) },
             { name: "Allowed tests / objectives", value: clip(tests + (e.objectives ? "\n" + e.objectives : ""), 1000) },
