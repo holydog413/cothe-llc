@@ -54,6 +54,7 @@ import argparse, datetime, ipaddress, json, os, re, subprocess, sys, urllib.requ
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cothe_payments as payments
+import cothe_internal_scan as internal_scan
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -335,11 +336,11 @@ def parse_ports(xml_path):
 NO_PAYMENT_MSG = ("⛔ Won't run — no payment recorded. Reply `paid cash` (or pay via Stripe) first.")
 
 
-def build_report(scan, operator, company, signed_by, auth_id, payment=None):
+def build_report(scan, operator, company, signed_by, auth_id, payment=None, internal=None):
     ip = scan["ip"]
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M %Z").strip()
     lines = []
-    lines.append("# COTHE LLC — External Assessment Report")
+    lines.append("# COTHE LLC — Network Assessment Report")
     lines.append("")
     lines.append("- **Target (Client internet IP):** `%s`" % ip)
     lines.append("- **Authorized by:** %s" % (signed_by or "—"))
@@ -353,6 +354,9 @@ def build_report(scan, operator, company, signed_by, auth_id, payment=None):
                  "common ports, light version/banner detection, HTTP/HTTPS title. "
                  "No exploits, no brute force, no credential guessing.")
     lines.append("")
+    lines.append("## 1. Outside-in findings (internet view)")
+    lines.append("")
+    _out_start = len(lines)
     ports = scan["ports"]
     if not ports:
         lines.append("## Result")
@@ -400,7 +404,11 @@ def build_report(scan, operator, company, signed_by, auth_id, payment=None):
         else:
             lines.append("- No high-risk services flagged among open ports; review each "
                          "exposed service for necessity and patch level.")
+    for _i in range(_out_start, len(lines)):
+        if lines[_i].startswith("## "):
+            lines[_i] = "#" + lines[_i]
     lines.append("")
+    lines.extend(internal_report_lines(internal))
     lines.append("---")
     lines.append("*Non-destructive assessment performed under signed authorization. "
                  "COTHE LLC — veteran-owned network security assessments.*")
@@ -512,6 +520,11 @@ def quote_canonical(q):
         "extraDevices": _int(q.get("extraDevices")),
         "extraSites": _int(q.get("extraSites")),
     }
+    # Internal (inside-out) keys only when ordered, so older signed quotes keep their hash.
+    if q.get("internal"):
+        obj["internal"] = True
+        obj["internalCidr"] = internal_scan.norm_cidrs(q.get("internalCidr"))
+        obj["internalNotes"] = str(q.get("internalNotes") or "")
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -661,7 +674,132 @@ def extract_from_answers(path):
         "quote_approved_date": d.get("quote_approved_date") or "",
         "quote_signature_captured": d.get("quote_signature_captured"),
         "quote_hash": d.get("quote_hash") or "",
+        "internal_requested": e.get("internalTesting") is True,
+        "internal_cidr": internal_scan.norm_cidrs(e.get("internalCidr") or e.get("internalRanges") or "")
+                         if e.get("internalTesting") is True else "",
+        "internal_raw": str(e.get("internalRanges") or ""),
+        "internal_access": str(e.get("internalAccess") or ""),
+        "internal_notes": "; ".join(x for x in [
+            "always-on PC available" if e.get("internalPcAvailable") else "",
+            "prefers drop box" if e.get("internalPreferDropBox") else "",
+            str(e.get("internalNotes") or "").strip()] if x),
     }
+
+
+def validate_internal(info):
+    """Inside-out gate. Returns (status, detail):
+       ('not_requested', '')         neither auth nor quote asked for internal testing
+       ('ok', cidr)                  signed auth AND signed quote both request it with the SAME valid CIDR
+       ('refused', reason)           requested somewhere but not consistently/validly — internal is skipped.
+    Never affects the outside-in gate. Only call AFTER validate_authorization() passed
+    (so the quote hash/signature already covers the quote's internal fields)."""
+    q = info.get("quote") if isinstance(info.get("quote"), dict) else {}
+    q_req = bool(q.get("internal"))
+    a_req = info.get("internal_requested") is True
+    if not q_req and not a_req:
+        return "not_requested", ""
+    if a_req and not q_req:
+        return "refused", "the client asked for internal testing but the signed quote doesn't include it — re-issue the quote with the internal add-on"
+    if q_req and not a_req:
+        return "refused", "the quote includes internal testing but the signed authorization didn't check \"Include internal (inside-out) network assessment\""
+    qc = internal_scan.norm_cidrs(q.get("internalCidr"))
+    ac = info.get("internal_cidr") or ""
+    if not qc:
+        return "refused", "the quote's internal LAN range is missing/invalid"
+    if not ac:
+        return "refused", "the authorization's internal LAN range %s is missing/invalid (private range, /22 or smaller)" % _shown(info.get("internal_raw"))
+    if qc != ac:
+        return "refused", "authorized LAN range `%s` doesn't match quote `%s`" % (ac, qc)
+    return "ok", ac
+
+
+def run_internal(info, dry_run=False):
+    """Gate + Tailscale readiness + scan. Returns dict for the report/summary. Never raises."""
+    status, detail = validate_internal(info)
+    if status == "not_requested":
+        return {"status": "not_requested"}
+    if status == "refused":
+        return {"status": "refused", "reason": detail}
+    cidr = detail
+    try:
+        ready, why, peer = internal_scan.tailscale_readiness(cidr)
+    except Exception as ex:
+        ready, why, peer = False, "Tailscale check failed (%s)" % type(ex).__name__, None
+    if not ready:
+        return {"status": "not_ready", "cidr": cidr, "reason": why}
+    if dry_run:
+        return {"status": "dry_run", "cidr": cidr, "peer": peer}
+    try:
+        res = internal_scan.scan_internal(cidr, via="socks")
+    except Exception as ex:
+        return {"status": "error", "cidr": cidr, "reason": "internal scan error (%s)" % type(ex).__name__}
+    return {"status": "done", "cidr": cidr, "peer": peer, "result": res,
+            "findings": internal_scan.findings(res)}
+
+
+INTERNAL_CLIENT_TODO = ("Client still needs to: install Tailscale on an always-on PC at the site, join COTHE's "
+                        "tailnet with the invite from their COTHE contact, and turn on subnet routing for their "
+                        "LAN (steps: https://holydog413.github.io/cothe-llc/setup/#tailscale). Then Rene approves "
+                        "the route in the COTHE Tailscale admin console.")
+
+
+def internal_discord_line(it):
+    s = it.get("status")
+    if s == "not_requested":
+        return "Inside-out: not requested."
+    if s == "refused":
+        return "⛔ Inside-out NOT run — %s." % it.get("reason")
+    if s == "not_ready":
+        return ("⛔ Inside-out NOT run for LAN `%s` — %s.\n%s\nOnce it's ready, reply `run internal` to the "
+                "authorization message (one internal run per authorization)."
+                % (it.get("cidr"), it.get("reason"), INTERNAL_CLIENT_TODO))
+    if s == "error":
+        return "⚠️ Inside-out failed for LAN `%s` — %s." % (it.get("cidr"), it.get("reason"))
+    if s == "dry_run":
+        return "Inside-out (dry run): LAN `%s` ready via %s." % (it.get("cidr"), (it.get("peer") or {}).get("host"))
+    r = it["result"]
+    hi = sum(1 for f in it["findings"] if f[0] in ("high", "medium"))
+    return ("🏠 Inside-out: LAN `%s` — %d live host(s), %d open service(s), %d high/medium finding(s)."
+            % (it["cidr"], len(r["hosts"]), sum(len(v) for v in r["hosts"].values()), hi))
+
+
+def internal_report_lines(it):
+    L = ["## 2. Inside-out findings (LAN view via Tailscale)", ""]
+    s = (it or {}).get("status", "not_requested")
+    if s == "not_requested":
+        L += ["Not requested — this engagement covered the outside-in (internet) view only.", ""]
+        return L
+    if s in ("refused", "not_ready", "error"):
+        L += ["**Not performed.** %s" % (it.get("reason") or "")]
+        if s == "not_ready":
+            L += ["", "Client Tailscale not ready. " + INTERNAL_CLIENT_TODO]
+        L.append("")
+        return L
+    if s == "dry_run":
+        L += ["Dry run — Tailscale ready for `%s`; no LAN scan performed." % it.get("cidr"), ""]
+        return L
+    r = it["result"]
+    L += ["- **Authorized LAN range (only range scanned):** `%s`" % it["cidr"],
+          "- **Path:** COTHE scan box → Tailscale → client subnet router `%s`" % (it.get("peer") or {}).get("host", "?"),
+          "- **Addresses checked:** %d · **live hosts:** %d · **time:** %ss" % (r["targets"], len(r["hosts"]), r["seconds"]),
+          "- **Method:** TCP connect to common ports + short banner read. No logins, no exploits, nothing written to client devices.",
+          ""]
+    if r["hosts"]:
+        L += ["| Host | Open services |", "|---|---|"]
+        for h, ps in r["hosts"].items():
+            L.append("| `%s` | %s |" % (h, ", ".join("%d/%s" % (p["port"], p["service"] or "?") for p in ps) or "— (responds, no common ports open)"))
+        L.append("")
+    else:
+        L += ["No live hosts answered on common ports.", ""]
+    L += ["### Risk notes", ""]
+    if it["findings"]:
+        icon = {"high": "🔴", "medium": "🟠", "low": "🟡", "info": "ℹ️"}
+        for sev, h, p, note in it["findings"]:
+            L.append("- %s **%s** `%s:%d` — %s" % (icon[sev], sev.upper(), h, p, note))
+    else:
+        L.append("- No obvious risky services found on the LAN among common ports.")
+    L.append("")
+    return L
 
 
 def validate_authorization(info):
@@ -848,8 +986,9 @@ def main():
         post_webhook(content=start_msg)
 
     scan = run_scan(ip)
+    internal = run_internal(info, dry_run=args.dry_run) if args.answers else {"status": "not_requested"}
     report = build_report(scan, args.operator, info.get("company"),
-                          info.get("signed_by"), args.auth_id, payment)
+                          info.get("signed_by"), args.auth_id, payment, internal)
     md_path = os.path.join(REPORTS, "report-%s-%s.md" % (ip.replace(":", "_"), scan["stamp"]))
     os.makedirs(REPORTS, exist_ok=True)
     open(md_path, "w").write(report)
@@ -857,8 +996,8 @@ def main():
 
     nopen = len(scan["ports"])
     summary = ("✅ **Assessment complete** — IP `%s`, authorized by %s, run by %s. "
-               "%d open common port(s) found. Full report attached." %
-               (ip, info.get("signed_by") or "—", args.operator, nopen))
+               "%d open common port(s) found. Full report attached.\n%s" %
+               (ip, info.get("signed_by") or "—", args.operator, nopen, internal_discord_line(internal)))
     if args.dry_run:
         print("\n===== REPORT (dry-run) =====\n")
         print(report)
@@ -867,7 +1006,8 @@ def main():
         post_webhook(content=summary, file_path=md_path)
         seen[key] = {"at": datetime.datetime.now().isoformat(timespec="seconds"),
                      "operator": args.operator, "ip": ip,
-                     "company": info.get("company"), "report": md_path}
+                     "company": info.get("company"), "report": md_path,
+                     "internal": internal.get("status"), "internal_cidr": internal.get("cidr", "")}
         save_seen(seen)
     print("done", file=sys.stderr)
 

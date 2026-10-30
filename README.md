@@ -38,3 +38,28 @@ inside an authorized range. Non-destructive only (host discovery + TCP connect s
 common ports, light version detection, safe scripts). One internal run per authorization
 (seen key `<auth-id>:internal`), separate from the external run. The Discord `run test`
 watcher on the box still runs external scans only.
+
+## Outside-in + inside-out assessments
+
+- **Outside-in** (always): nmap TCP-connect scan of the client's public IP from the box.
+- **Inside-out** (optional add-on, Home $149 / Business $395): LAN scan through COTHE's Tailscale
+  network. Runs only when the signed authorization **and** the signed quote both include
+  "Internal (inside-out) network assessment" with the **same** private CIDR (/22 or smaller), and
+  exactly one online tailnet device has an approved subnet route covering it. Otherwise the internal
+  part is refused with a Discord note and outside-in still runs. Later, reply `run internal` to the
+  authorization to run just the internal part (once).
+- Client steps: `setup/#tailscale`. Drop-box option documented at `setup/#dropbox`.
+
+### One-time Tailscale setup (Rene)
+1. Create a Tailscale account for COTHE LLC (https://login.tailscale.com/start).
+2. Admin console → Settings → Keys → **Generate auth key** (reusable, tagged `tag:cothe-scanner` if
+   you add that tag in Access controls). Save it in box secrets as `COTHE_TS_AUTHKEY`.
+3. Join the box once: `COTHE_TS_AUTHKEY=... tools/cothe_tailscale_box.sh up`
+   (separate daemon: `/opt/cothe-tailscale`, state `~/.cothe-tailscale`, SOCKS `127.0.0.1:1056`).
+4. Per client: send an invite (Admin → Users → Invite) or a one-off auth key; after they run
+   `tailscale up --advertise-routes=<their CIDR>`, approve the route on their machine
+   (Machines → … → Edit route settings). Remove the device + route when the report is delivered.
+5. Fill the invite placeholder on `setup/index.html` (search `ask your COTHE contact for the invite`)
+   if you want a standing invite link.
+
+Self-test (no client traffic): `python3 tools/cothe_watch_run_test.py --self-test`

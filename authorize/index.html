@@ -582,14 +582,19 @@
         <small id="clientIpHelp" style="display:block;margin-top:.35rem">Tap Use my IP while you're at the location being tested.</small>
       </div>
       <div class="field" style="grid-column: 1 / -1;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px">
-        <label style="font-weight:600"><input type="checkbox" id="internalTesting" /> Also test my internal network (“inside-out”)</label>
-        <small style="display:block;margin:.25rem 0 .5rem">We run the same non-destructive checks from <em>inside</em> your network (on-site laptop or a temporary scan device you plug in) to find exposed services on your computers, cameras, printers, and other devices — not just what the internet sees.</small>
+        <label style="display:flex;align-items:center;gap:.5rem;font-weight:700;text-transform:none;letter-spacing:0;font-size:15px"><input type="checkbox" id="internalTesting" style="width:auto;margin:0" /> Include internal (inside-out) network assessment</label>
+        <small style="display:block;margin:.25rem 0 .5rem">We run the same non-destructive checks from <em>inside</em> your network — usually through a free Tailscale app on an always-on PC (<a href="../setup/#tailscale">setup steps</a>) — to find exposed services on your computers, cameras, printers, and other devices, not just what the internet sees. We only ever check the range you enter below.</small>
         <div id="internalBox" hidden>
-          <label for="internalRanges">Internal network range(s) in scope <span style="color:#dc2626">*</span></label>
+          <label for="internalRanges">Internal LAN range (CIDR) <span style="color:#dc2626">*</span></label>
           <input id="internalRanges" type="text" autocomplete="off" placeholder="e.g. 192.168.1.0/24" />
-          <small style="display:block;margin-top:.25rem">Private ranges only (192.168.x.x, 10.x.x.x, 172.16–31.x.x), up to /22 each; separate multiple with commas. Not sure? Leave 192.168.1.0/24 and we'll confirm on-site.</small>
+          <small style="display:block;margin-top:.25rem">Private ranges only (192.168.x.x, 10.x.x.x, 172.16–31.x.x), up to /22 each; separate multiple with commas. Not sure? Leave 192.168.1.0/24 — your COTHE rep will confirm it with you.</small>
           <label for="internalAccess" style="margin-top:.5rem">How we'll connect</label>
-          <select id="internalAccess"><option value="onsite">On-site visit (technician laptop)</option><option value="device">Scan device you plug into your network</option></select>
+          <select id="internalAccess"><option value="tailscale">Tailscale on an always-on PC (recommended)</option><option value="dropbox">Mailed drop box (pre-configured mini PC) — later</option><option value="onsite">On-site visit (technician laptop)</option></select>
+          <label style="display:flex;align-items:center;gap:.5rem;text-transform:none;letter-spacing:0;font-size:14px;margin-top:.4rem"><input type="checkbox" id="internalPc" style="width:auto;margin:0" /> I have an always-on PC available for Tailscale</label>
+          <label style="display:flex;align-items:center;gap:.5rem;text-transform:none;letter-spacing:0;font-size:14px;margin-top:.4rem"><input type="checkbox" id="internalDrop" style="width:auto;margin:0" /> I'd prefer a mailed drop box later</label>
+          <label for="internalNotes" style="margin-top:.5rem">Notes (optional)</label>
+          <input id="internalNotes" type="text" autocomplete="off" placeholder="e.g. office PC in back room is on 24/7" />
+          <p id="internalQuoteWarn" role="status" hidden style="margin:.5rem 0 0;padding:6px 10px;font-size:13px;border-radius:6px;background:#fef3c7;color:#92400e;border:1px solid #fcd34d"></p>
         </div>
       </div>
       <details style="grid-column: 1 / -1;">
@@ -1127,6 +1132,22 @@
         return (Math.round(x * 10000 + (x >= 0 ? 1e-8 : -1e-8)) / 10000).toFixed(4);
       }
       function intCanon(v) { var x = Math.round(Number(v) || 0); return x > 0 ? x : 0; }
+      function normCidrs(v) {
+        var parts = String(v || "").split(/[\s,;]+/).filter(Boolean), out = [];
+        if (!parts.length) return "";
+        for (var i = 0; i < parts.length; i++) {
+          var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/.exec(parts[i]);
+          if (!m) return "";
+          var o = [+m[1], +m[2], +m[3], +m[4]], n = m[5] === undefined ? 32 : +m[5];
+          if (o.some(function (x) { return x > 255; }) || n < 22 || n > 32) return "";
+          var ip = ((o[0] << 24) >>> 0) + (o[1] << 16) + (o[2] << 8) + o[3];
+          var mask = (0xFFFFFFFF << (32 - n)) >>> 0, net = (ip & mask) >>> 0;
+          var a = net >>> 24, b = (net >>> 16) & 255;
+          if (!(a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168))) return "";
+          out.push([a, b, (net >>> 8) & 255, net & 255].join(".") + "/" + n);
+        }
+        return out.join(",");
+      }
       function quoteCanonical(q) {
         var obj = {
           tier: String(q.tier || ""),
@@ -1149,6 +1170,8 @@
           extraDevices: intCanon(q.extraDevices),
           extraSites: intCanon(q.extraSites)
         };
+        /* Internal keys only when ordered (matches quote builder + tools/cothe_run_test.py). */
+        if (q.internal) { obj.internal = true; obj.internalCidr = normCidrs(q.internalCidr); obj.internalNotes = String(q.internalNotes || ""); }
         return JSON.stringify(obj);
       }
       function sha256HexSync(str) {
@@ -1223,7 +1246,8 @@
           localRate: c.lr || 0, discount: !!c.d, subtotal: c.st, discountAmt: c.da || 0, taxable: c.tb,
           taxRate: c.tr, tax: c.tx, oneTimeTotal: c.ot, monitoring: c.m || "None", monthly: c.mo || 0,
           monthlyTax: c.mx || 0, monthlyTotal: c.mt || 0, client_name: c.n, client_email: c.e,
-          client_company: c.co, tier_id: c.ti, extra_devices: c.xd || 0, extra_sites: c.xs || 0, quote_hash: c.h
+          client_company: c.co, tier_id: c.ti, extra_devices: c.xd || 0, extra_sites: c.xs || 0,
+          internal: !!c.in, internal_cidr: c.ic || "", internal_notes: c.inn || "", quote_hash: c.h
         };
       }
       function expandCompactQuote(c) {
@@ -1258,6 +1282,9 @@
           tierId: c.tier_id || c.tierId || "",
           extraDevices: c.extra_devices || c.extraDevices || 0,
           extraSites: c.extra_sites || c.extraSites || 0,
+          internal: !!(c.internal),
+          internalCidr: c.internal_cidr || c.internalCidr || "",
+          internalNotes: c.internal_notes || c.internalNotes || "",
           pricing: c.pricing && typeof c.pricing === "object" ? c.pricing : null,
           quote_hash: c.quote_hash || ""
         };
@@ -1391,6 +1418,15 @@
         fill("clientOrg", q.clientCompany);
         fill("clientSigName", q.clientName);
         fill("quoteApproveName", q.clientName);
+        if (q.internal) {
+          var ic = document.getElementById("internalTesting");
+          if (ic && !ic.checked) { ic.checked = true; ic.dispatchEvent(new Event("change")); }
+          fill("internalRanges", q.internalCidr);
+          var ni = String(q.internalNotes || "");
+          if (/always-on PC/i.test(ni)) document.getElementById("internalPc").checked = true;
+          if (/drop-box/i.test(ni)) document.getElementById("internalDrop").checked = true;
+          updateInternalQuoteWarn();
+        }
         if (prefillListeners) { updateQuoteMatchWarn(); return; }
         prefillListeners = true;
         ["clientContact", "clientEmail", "clientOrg", "clientSigName"].forEach(function (id) {
@@ -1409,6 +1445,16 @@
       var TIER_CAPS = { home: { kind: "home", max: null }, remote: { kind: "home", max: null }, smb: { kind: "business", max: 10 }, smbp: { kind: "business", max: 25 } };
       var DEFAULT_PRICING = { tiers: [{ id: "home", name: "Home Security Check", price: 249, kind: "home" }, { id: "remote", name: "Remote external-only check", price: 129, kind: "home" },
         { id: "smb", name: "Small Business (up to 10 devices, 1 site)", price: 895, kind: "business" }, { id: "smbp", name: "Small Business Plus (11–25 devices)", price: 1495, kind: "business" }], extraDevice: 35, extraSite: 295 };
+      /* Internal scope vs quote (mirrors validate_internal in tools/cothe_run_test.py). */
+      function updateInternalQuoteWarn() {
+        var el = document.getElementById("internalQuoteWarn"), cb = document.getElementById("internalTesting"), q = storedQuote();
+        if (!el || !cb) return;
+        var msg = "";
+        if (q && q.internal && !cb.checked) msg = "Your quote includes an internal (inside-out) assessment — check the box above so we can run it.";
+        else if (q && cb.checked && !q.internal) msg = "Your quote doesn't include the internal assessment, so only the outside (internet) check will run. Ask your COTHE rep for an updated quote.";
+        else if (q && cb.checked && q.internal && normCidrs(val("internalRanges")) !== normCidrs(q.internalCidr)) msg = "This LAN range doesn't match your quote (" + (q.internalCidr || "none") + "). It must match for the internal check to run.";
+        el.textContent = msg; el.hidden = !msg;
+      }
       function validInternalRanges(v) {
         var parts = String(v || "").split(/[\s,]+/).filter(Boolean);
         if (!parts.length) return false;
@@ -1423,8 +1469,9 @@
       (function () {
         var cb = document.getElementById("internalTesting"), box = document.getElementById("internalBox");
         if (!cb || !box) return;
-        var sync = function () { box.hidden = !cb.checked; };
+        var sync = function () { box.hidden = !cb.checked; updateInternalQuoteWarn(); };
         cb.addEventListener("change", sync); sync();
+        var rg = document.getElementById("internalRanges"); if (rg) rg.addEventListener("input", updateInternalQuoteWarn);
       })();
       function radioVal(n) { var r = document.querySelector('input[name="' + n + '"]:checked'); return r ? r.value : ""; }
       function nInt(v) { var x = Math.round(Number(v) || 0); return x > 0 ? x : 0; }
@@ -1509,6 +1556,10 @@
             internalTesting: !!(document.getElementById("internalTesting") && document.getElementById("internalTesting").checked),
             internalRanges: (document.getElementById("internalTesting") && document.getElementById("internalTesting").checked) ? val("internalRanges") : "",
             internalAccess: (document.getElementById("internalTesting") && document.getElementById("internalTesting").checked) ? val("internalAccess") : "",
+            internalCidr: (document.getElementById("internalTesting") && document.getElementById("internalTesting").checked) ? normCidrs(val("internalRanges")) : "",
+            internalPcAvailable: !!(document.getElementById("internalTesting") && document.getElementById("internalTesting").checked && document.getElementById("internalPc").checked),
+            internalPreferDropBox: !!(document.getElementById("internalTesting") && document.getElementById("internalTesting").checked && document.getElementById("internalDrop").checked),
+            internalNotes: (document.getElementById("internalTesting") && document.getElementById("internalTesting").checked) ? val("internalNotes") : "",
             targets: val("targets"),
             outOfScope: val("outOfScope"),
             objectives: val("objectives"),
@@ -1629,7 +1680,7 @@
         var d = collectAnswers(), a = d.authorizingPerson, c = d.client, e = d.engagement;
         if (!c.organization || !c.email || !a.typedLegalName) { alert("Please fill in Client organization, email, and the authorizing person's typed legal name before submitting."); return; }
         if (!isValidIp(e.clientIp)) { alert("Please enter your internet IP address (tap Use my IP)."); var ipEl = document.getElementById("clientIp"); ipEl.focus(); return; }
-        if (e.internalTesting && !validInternalRanges(e.internalRanges)) { alert("Internal testing: enter private network range(s) like 192.168.1.0/24 (each /22 or smaller)."); document.getElementById("internalRanges").focus(); return; }
+        if (e.internalTesting && !normCidrs(e.internalRanges)) { alert("Internal testing: enter private network range(s) like 192.168.1.0/24 (each /22 or smaller)."); document.getElementById("internalRanges").focus(); return; }
         var tests = [e.nonDestructiveDefault ? "Non-destructive (default)" : null, e.intrusiveRequestedCheckbox ? "Intrusive testing REQUESTED (needs separate agreement)" : null].filter(Boolean).join("\n") || "—";
         var embed = {
           title: "New authorization — " + clip(c.organization, 200),
@@ -1643,7 +1694,7 @@
             { name: "Schedule", value: clip((e.startDate || "?") + " → " + (e.endDate || "?"), 1000), inline: true },
             { name: "Address", value: clip(c.address, 1000), inline: true },
             { name: "🌐 Client internet IP", value: "`" + clip(e.clientIp, 100) + "`" },
-            { name: "🏠 Internal (inside-out) testing", value: e.internalTesting ? clip("YES — ranges `" + e.internalRanges + "` via " + (e.internalAccess === "device" ? "client-installed scan device" : "on-site visit"), 1000) : "No (external only)" },
+            { name: "🏠 Internal (inside-out) testing", value: e.internalTesting ? clip("YES — LAN `" + e.internalCidr + "` via " + ({ tailscale: "Tailscale subnet router (always-on PC)", dropbox: "mailed drop box (later)", onsite: "on-site visit", device: "client scan device" }[e.internalAccess] || e.internalAccess) + (e.internalPcAvailable ? " · always-on PC ✅" : "") + (e.internalPreferDropBox ? " · prefers drop box" : "") + (e.internalNotes ? " · " + e.internalNotes : "") + (d.quote && d.quote !== "none" ? (d.quote.internal ? (normCidrs(d.quote.internalCidr) === e.internalCidr ? " · quote ✅ same LAN" : " · ⚠️ quote LAN `" + (d.quote.internalCidr || "?") + "` differs") : " · ⚠️ quote does NOT include internal") : ""), 1000) : "No (external only)" },
             { name: "Extra networks / CIDR (optional)", value: clip(e.targets, 1000) },
             { name: "Out of scope (optional)", value: clip(e.outOfScope, 1000) },
             { name: "Allowed tests / objectives", value: clip(tests + (e.objectives ? "\n" + e.objectives : ""), 1000) },
