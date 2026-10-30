@@ -24,6 +24,19 @@ Safety (enforced here):
   * One run per authorization message id: tracked in a seen file. A second attempt
     on the same auth id is refused.
 
+Internal ("inside-out") mode (--internal):
+  * Must be run from a machine INSIDE the client network (on-site laptop or plug-in
+    scan device). Refuses unless this host has an interface address inside one of the
+    authorized ranges.
+  * Targets ONLY the client-authorized private ranges (engagement.internalRanges with
+    engagement.internalTesting=true, or --ranges in manual mode). Private RFC1918 IPv4
+    only, each /22 or smaller. Same non-destructive nmap profile (TCP connect, light
+    version detection, safe scripts) plus a ping/ARP host-discovery pass.
+  * Same signature / photo / quote / payment gates. Tracked separately in the seen file
+    (key "<auth-id>:internal") so one external + one internal run per authorization.
+  Example (on-site):  python3 tools/cothe_run_test.py --internal --answers answers.json \
+      --operator "Martin" --auth-id 1558499999999999999
+
 Usage:
   # From a downloaded intake answers.json (preferred; validates sig/photo/IP):
   python3 tools/cothe_run_test.py --answers answers.json --operator "Martin" \
@@ -70,6 +83,146 @@ def is_public_ip(v):
         return False
     return not (ip.is_private or ip.is_loopback or ip.is_link_local or
                 ip.is_multicast or ip.is_reserved or ip.is_unspecified)
+
+
+MAX_INTERNAL_PREFIX = 22  # largest allowed internal range (1024 addresses)
+
+
+def parse_internal_ranges(v):
+    """Returns (networks, errors). Private IPv4 only, each /22 or smaller."""
+    nets, errs = [], []
+    for r in re.split(r"[\s,;]+", (v or "").strip()):
+        if not r:
+            continue
+        try:
+            n = ipaddress.ip_network(r, strict=False)
+        except ValueError:
+            errs.append("'%s' is not a valid range" % r)
+            continue
+        if n.version != 4 or not n.is_private or n.is_loopback or n.is_link_local or n.is_multicast:
+            errs.append("'%s' is not a private (RFC1918) IPv4 range" % r)
+        elif n.prefixlen < MAX_INTERNAL_PREFIX:
+            errs.append("'%s' is larger than /%d" % (r, MAX_INTERNAL_PREFIX))
+        else:
+            nets.append(n)
+    if not nets and not errs:
+        errs.append("no internal ranges were authorized")
+    return nets, errs
+
+
+def local_ipv4_addresses():
+    addrs = set()
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show"], capture_output=True,
+                             text=True, timeout=10).stdout
+        for m in re.finditer(r"inet (\d+\.\d+\.\d+\.\d+)", out):
+            addrs.add(ipaddress.ip_address(m.group(1)))
+    except Exception:
+        pass
+    if not addrs:
+        try:
+            import socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("192.0.2.1", 9))
+            addrs.add(ipaddress.ip_address(s.getsockname()[0]))
+            s.close()
+        except Exception:
+            pass
+    return addrs
+
+
+def host_inside(nets):
+    return any(a in n for a in local_ipv4_addresses() for n in nets)
+
+
+def run_internal_scan(nets):
+    os.makedirs(REPORTS, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    label = "internal-" + "_".join(str(n).replace("/", "-") for n in nets)[:80]
+    xml = os.path.join(REPORTS, "scan-%s-%s.xml" % (label, stamp))
+    cmd = ["nmap", "-sT", "-n", "--version-light", "-sV", "-p", TOP_PORTS,
+           "--script", "banner,http-title,ssl-cert", "--host-timeout", "4m",
+           "--max-retries", "2", "-T3", "--open", "-oX", xml] + [str(n) for n in nets]
+    print("[scan] " + " ".join(cmd), file=sys.stderr)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    raw = proc.stdout + ("\n" + proc.stderr if proc.stderr.strip() else "")
+    hosts = parse_hosts(xml) if os.path.exists(xml) else []
+    return {"ip": ", ".join(str(n) for n in nets), "label": label, "stamp": stamp,
+            "hosts": hosts, "ports": [p for h in hosts for p in h["ports"]],
+            "raw": raw, "xml": xml, "returncode": proc.returncode}
+
+
+def parse_hosts(xml_path):
+    import xml.etree.ElementTree as ET
+    hosts = []
+    try:
+        root = ET.parse(xml_path).getroot()
+    except Exception:
+        return hosts
+    for h in root.findall("host"):
+        st = h.find("status")
+        if st is not None and st.get("state") != "up":
+            continue
+        addr = next((a.get("addr") for a in h.findall("address") if a.get("addrtype") == "ipv4"), "?")
+        mac = next((a for a in h.findall("address") if a.get("addrtype") == "mac"), None)
+        ports = []
+        for p in h.findall("ports/port"):
+            s = p.find("state")
+            if s is None or s.get("state") != "open":
+                continue
+            svc = p.find("service")
+            ports.append({"host": addr, "port": p.get("portid"), "proto": p.get("protocol"),
+                          "service": (svc.get("name") if svc is not None else "") or "",
+                          "product": " ".join(x for x in [svc.get("product", ""), svc.get("version", "")] if x) if svc is not None else ""})
+        hosts.append({"ip": addr, "mac": mac.get("addr") if mac is not None else "",
+                      "vendor": mac.get("vendor", "") if mac is not None else "", "ports": ports})
+    return hosts
+
+
+RISKY_INTERNAL = {"23": "Telnet (cleartext admin)", "21": "FTP (cleartext)", "445": "SMB file sharing",
+                  "139": "NetBIOS/SMB", "3389": "Remote Desktop", "5900": "VNC remote control",
+                  "161": "SNMP", "6379": "Redis (often no auth)", "9200": "Elasticsearch",
+                  "27017": "MongoDB", "2049": "NFS", "3306": "MySQL", "5432": "PostgreSQL",
+                  "1433": "MS SQL"}
+
+
+def build_internal_report(scan, operator, company, signed_by, auth_id, payment=None, access=""):
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M %Z").strip()
+    L = ["# COTHE LLC — Internal (Inside-Out) Assessment Report", "",
+         "- **Target (authorized internal ranges):** `%s`" % scan["ip"],
+         "- **Authorized by:** %s" % (signed_by or "—"),
+         "- **Company:** %s" % (company or "—"),
+         "- **Run started by (accountable):** %s" % operator]
+    if access:
+        L.append("- **Access method:** %s" % ("client-installed scan device" if access == "device" else "on-site visit"))
+    if payment:
+        L.append("- **Paid:** %s" % payments.describe(payment))
+    L += ["- **Authorization id:** `%s`" % (auth_id or "—"), "- **Run at:** %s" % now,
+          "- **Scan type:** Non-destructive internal — host discovery, TCP connect scan of common "
+          "ports, light version/banner detection, HTTP/HTTPS title. No exploits, brute force, or "
+          "intrusive scripts.", "",
+          "## Summary", "",
+          "- Live devices found: **%d**" % len(scan["hosts"]),
+          "- Open common ports (all devices): **%d**" % len(scan["ports"]), ""]
+    risky = [p for p in scan["ports"] if p["port"] in RISKY_INTERNAL]
+    L += ["## Priority findings", ""]
+    if risky:
+        for p in risky:
+            L.append("- `%s:%s` — %s. Confirm it's needed; restrict to admin devices or disable."
+                     % (p["host"], p["port"], RISKY_INTERNAL[p["port"]]))
+    else:
+        L.append("- No high-risk services from our watch list were found on common ports.")
+    L += ["", "## Devices", "", "| Device IP | MAC / vendor | Open ports |", "|---|---|---|"]
+    for h in scan["hosts"]:
+        ports = ", ".join("%s/%s %s" % (p["port"], p["proto"], (p["service"] + (" (" + p["product"] + ")" if p["product"] else "")).strip()) for p in h["ports"]) or "none on common ports"
+        L.append("| `%s` | %s | %s |" % (h["ip"], (h["mac"] + (" " + h["vendor"] if h["vendor"] else "")).strip() or "—", ports))
+    L += ["", "## Recommended next steps", "",
+          "1. Disable or firewall any service above you don't recognize or need.",
+          "2. Put cameras, smart-home, and guest devices on a separate VLAN / guest network.",
+          "3. Change default passwords on printers, cameras, NAS, and routers; update firmware.",
+          "4. Turn off SMB/RDP/VNC on machines that don't need to share or be remotely controlled.",
+          "", "_Report for the Client's internal use. Scope limited to the authorized ranges and window._"]
+    return "\n".join(L) + "\n"
 
 
 def load_seen():
@@ -491,6 +644,9 @@ def extract_from_answers(path):
     e = d.get("engagement", {})
     return {
         "ip": e.get("clientIp", ""),
+        "internal_testing": bool(e.get("internalTesting")),
+        "internal_ranges": e.get("internalRanges", "") or "",
+        "internal_access": e.get("internalAccess", "") or "",
         "company": c.get("organization", ""),
         "client_contact": c.get("contact", "") or "",
         "client_email": c.get("email", "") or "",
@@ -542,24 +698,35 @@ def main():
     ap.add_argument("--auth-id", default="", help="Authorization/Discord message id (one run per id)")
     ap.add_argument("--i-have-verified-authorization", action="store_true",
                     help="Manual mode attestation: caller confirms a valid signed authorization exists")
+    ap.add_argument("--internal", action="store_true",
+                    help="Internal (inside-out) run from a machine inside the client network")
+    ap.add_argument("--ranges", default="", help="Internal ranges (manual mode with --internal)")
     ap.add_argument("--dry-run", action="store_true", help="Scan + build report, print, do not post or mark seen")
     args = ap.parse_args()
 
     if args.answers:
         info = resolve_photo(extract_from_answers(args.answers))
     else:
-        if not args.ip:
+        if not args.ip and not args.internal:
             ap.error("provide --answers or --ip")
         info = {"ip": args.ip, "company": args.company, "signed_by": args.signed_by,
                 "sig": args.i_have_verified_authorization,
                 "photo": args.i_have_verified_authorization}
+        if args.internal:
+            info.update({"internal_testing": True, "internal_ranges": args.ranges})
 
     # When using answers.json, always enforce the full authorization gate.
     # In manual mode, require either answers or the explicit attestation.
     if args.answers:
         ok, missing = validate_authorization(info)
+        if args.internal and not is_public_ip(info.get("ip", "")):
+            # Public IP isn't the target of an internal run; don't block on it.
+            missing = [m for m in missing if "public client IP" not in m]
+            ok = not missing
     else:
-        if args.i_have_verified_authorization:
+        if args.i_have_verified_authorization and args.internal:
+            ok, missing = True, []
+        elif args.i_have_verified_authorization:
             ok = is_public_ip(info["ip"])
             missing = [] if ok else ["a valid public client IP is missing/invalid"]
         else:
@@ -594,6 +761,33 @@ def main():
             post_webhook(content=msg)
         sys.exit(2)
 
+    nets = []
+    if args.internal:
+        if not info.get("internal_testing"):
+            msg = ("⛔ **Won't run internal test** — the client did not authorize internal "
+                   "(inside-out) testing on this authorization. No scan was performed.")
+            print(msg, file=sys.stderr)
+            if not args.dry_run:
+                post_webhook(content=msg)
+            sys.exit(2)
+        nets, errs = parse_internal_ranges(info.get("internal_ranges"))
+        if errs:
+            msg = ("⛔ **Won't run internal test** — authorized ranges invalid: %s. "
+                   "No scan was performed." % "; ".join(errs))
+            print(msg, file=sys.stderr)
+            if not args.dry_run:
+                post_webhook(content=msg)
+            sys.exit(2)
+        if not host_inside(nets):
+            msg = ("⛔ **Won't run internal test** — this scanner is not connected inside the "
+                   "authorized range(s) `%s`. Run it on-site / from the client scan device. "
+                   "No scan was performed." % ", ".join(map(str, nets)))
+            print(msg, file=sys.stderr)
+            if not args.dry_run:
+                post_webhook(content=msg)
+            sys.exit(5)
+        ip = ", ".join(map(str, nets))
+
     # Payment gate.
     payment = payments.find_payment(args.auth_id)
     if not payment:
@@ -605,6 +799,8 @@ def main():
     # Cap: one run per authorization message id.
     seen = load_seen()
     key = args.auth_id or ("ip:" + ip)
+    if args.internal:
+        key += ":internal"
     if not args.dry_run and key in seen:
         msg = ("⛔ **Already run** for authorization `%s` (IP `%s`) at %s by %s. "
                "One run per authorization — refusing to re-scan." %
@@ -612,6 +808,33 @@ def main():
         print(msg, file=sys.stderr)
         post_webhook(content=msg)
         sys.exit(3)
+
+    if args.internal:
+        start_msg = ("▶️ **Started by %s** — running a non-destructive INTERNAL (inside-out) "
+                     "assessment of `%s`%s. Authorized by %s. Paid: %s." %
+                     (args.operator, ip, (" for **%s**" % info["company"]) if info.get("company") else "",
+                      info.get("signed_by") or "—", payments.describe(payment)))
+        print(start_msg, file=sys.stderr)
+        if not args.dry_run:
+            post_webhook(content=start_msg)
+        scan = run_internal_scan(nets)
+        report = build_internal_report(scan, args.operator, info.get("company"), info.get("signed_by"),
+                                       args.auth_id, payment, info.get("internal_access", ""))
+        md_path = os.path.join(REPORTS, "report-%s-%s.md" % (scan["label"], scan["stamp"]))
+        open(md_path, "w").write(report)
+        summary = ("✅ **Internal assessment complete** — `%s`, authorized by %s, run by %s. "
+                   "%d device(s), %d open common port(s). Full report attached." %
+                   (ip, info.get("signed_by") or "—", args.operator, len(scan["hosts"]), len(scan["ports"])))
+        if args.dry_run:
+            print("\n===== REPORT (dry-run) =====\n" + report + "\n===== SUMMARY =====\n" + summary)
+        else:
+            post_webhook(content=summary, file_path=md_path)
+            seen[key] = {"at": datetime.datetime.now().isoformat(timespec="seconds"),
+                         "operator": args.operator, "ip": ip, "company": info.get("company"),
+                         "report": md_path, "type": "internal"}
+            save_seen(seen)
+        print("done", file=sys.stderr)
+        return
 
     # Announce
     start_msg = ("▶️ **Started by %s** — running a non-destructive external assessment "
