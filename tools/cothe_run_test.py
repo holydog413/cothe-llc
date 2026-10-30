@@ -908,6 +908,16 @@ def main():
             if not args.dry_run:
                 post_webhook(content=msg)
             sys.exit(2)
+        if args.answers:
+            ist, idet = validate_internal(info)
+            if ist != "ok":
+                msg = ("⛔ **Won't run internal test** — %s. No scan was performed."
+                       % (idet or "internal testing is not on both the signed authorization and the signed quote"))
+                print(msg, file=sys.stderr)
+                if not args.dry_run:
+                    post_webhook(content=msg)
+                sys.exit(2)
+            info["internal_ranges"] = idet  # scan exactly the CIDR both signed documents agree on
         nets, errs = parse_internal_ranges(info.get("internal_ranges"))
         if errs:
             msg = ("⛔ **Won't run internal test** — authorized ranges invalid: %s. "
